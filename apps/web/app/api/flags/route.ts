@@ -12,13 +12,23 @@ function slugify(name: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
 
   // SDK path: Authorization: Bearer sdk-xxx
   if (authHeader) {
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS });
 
     const hash = await hashKey(token);
     const [apiKey] = await db
@@ -27,7 +37,7 @@ export async function GET(req: NextRequest) {
       .where(eq(apiKeys.keyHash, hash))
       .limit(1);
 
-    if (!apiKey) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!apiKey) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS });
 
     const rows = await db
       .select({
@@ -44,9 +54,10 @@ export async function GET(req: NextRequest) {
       )
       .orderBy(asc(flags.key));
 
-    return NextResponse.json({
-      flags: rows.map((r) => ({ key: r.key, enabled: r.enabled })),
-    });
+    return NextResponse.json(
+      { flags: rows.map((r) => ({ key: r.key, enabled: r.enabled })) },
+      { headers: CORS_HEADERS },
+    );
   }
 
   // Dashboard path: no auth header — return all flags with per-environment states
