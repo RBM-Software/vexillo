@@ -6,6 +6,10 @@ import { db } from './db';
 import { authUser, authSession, authAccount, authVerification } from './schema';
 
 export const auth = betterAuth({
+  baseURL: process.env.BETTER_AUTH_URL,
+  trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS
+    ? process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(',')
+    : [],
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema: {
