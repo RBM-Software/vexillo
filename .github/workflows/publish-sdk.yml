@@ -1,4 +1,4 @@
-name: Publish @vexillo/sdk
+name: Publish @vexillo/react-sdk
 
 on:
   push:
@@ -25,9 +25,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build SDK
-        run: pnpm --filter @vexillo/sdk build
+        run: pnpm --filter @vexillo/react-sdk build
 
       - name: Publish to npm
-        run: pnpm --filter @vexillo/sdk publish --no-git-checks
+        run: pnpm --filter @vexillo/react-sdk publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
