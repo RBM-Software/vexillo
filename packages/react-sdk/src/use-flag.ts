@@ -4,8 +4,8 @@ import { useVexilloClientContext } from "./provider";
 /**
  * Returns `[value, isLoading]` for a feature flag key.
  *
- * - `value` — current boolean value. Falls back to `defaultValue` (then
- *   `false`) for unknown keys or while the client is still loading.
+ * - `value` — current boolean value. Falls back to `fallbacks` config then
+ *   `false` for unknown keys or while the client is still loading.
  * - `isLoading` — `true` until the client has loaded at least once. Use this
  *   to suppress flag-gated UI until flags are known, avoiding
  *   flash-of-wrong-content in SPAs:
@@ -19,30 +19,27 @@ import { useVexilloClientContext } from "./provider";
  *
  * @throws if called outside a `<VexilloClientProvider>`.
  */
-export function useFlag(
-  key: string,
-  defaultValue?: boolean,
-): [value: boolean, isLoading: boolean] {
+export function useFlag(key: string): [value: boolean, isLoading: boolean] {
   const client = useVexilloClientContext();
 
   const [state, setState] = useState(() => ({
-    value: client.getFlag(key, defaultValue),
+    value: client.getFlag(key),
     isLoading: !client.isReady,
   }));
 
   useEffect(() => {
     setState({
-      value: client.getFlag(key, defaultValue),
+      value: client.getFlag(key),
       isLoading: !client.isReady,
     });
 
     return client.subscribe(key, () => {
       setState({
-        value: client.getFlag(key, defaultValue),
+        value: client.getFlag(key),
         isLoading: !client.isReady,
       });
     });
-  }, [client, key, defaultValue]);
+  }, [client, key]);
 
   return [state.value, state.isLoading];
 }

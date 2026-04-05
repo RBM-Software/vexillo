@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
       )
       .orderBy(asc(flags.key));
 
+    corsHeaders.set('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
     return NextResponse.json(
       { flags: rows.map((r) => ({ key: r.key, enabled: r.enabled })) },
       { headers: corsHeaders },

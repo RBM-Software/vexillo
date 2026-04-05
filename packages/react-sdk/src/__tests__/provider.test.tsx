@@ -51,7 +51,7 @@ describe("VexilloClientProvider — initialFlags (synchronous path)", () => {
     const client = createMockVexilloClient({ flags: { "dark-mode": true } });
 
     render(
-      <VexilloClientProvider client={client} autoLoad={false}>
+      <VexilloClientProvider client={client}>
         <FlagConsumer flagKey="dark-mode" />
       </VexilloClientProvider>,
     );
@@ -67,7 +67,7 @@ describe("VexilloClientProvider — initialFlags (synchronous path)", () => {
     });
 
     render(
-      <VexilloClientProvider client={client} autoLoad={false}>
+      <VexilloClientProvider client={client}>
         <FlagConsumer flagKey="beta-feature" />
       </VexilloClientProvider>,
     );
@@ -76,7 +76,7 @@ describe("VexilloClientProvider — initialFlags (synchronous path)", () => {
   });
 });
 
-describe("VexilloClientProvider — autoLoad fetch path", () => {
+describe("VexilloClientProvider — fetch path", () => {
   it("loads and renders fetched flag values", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(
       makeFetchOk([
@@ -172,27 +172,49 @@ describe("VexilloClientProvider — autoLoad fetch path", () => {
   });
 });
 
-describe("VexilloClientProvider — override()", () => {
-  it("override() takes effect immediately and is reversible", async () => {
+describe("VexilloClientProvider — overrides", () => {
+  it("override() takes effect immediately and is reversible via clearOverride()", async () => {
     const client = createMockVexilloClient({ flags: { feature: false } });
 
     render(
-      <VexilloClientProvider client={client} autoLoad={false}>
+      <VexilloClientProvider client={client}>
         <FlagConsumer flagKey="feature" />
       </VexilloClientProvider>,
     );
 
     expect(screen.getByTestId("flag-feature").textContent).toBe("false");
 
-    let cleanup!: () => void;
     await act(async () => {
-      cleanup = client.override({ feature: true });
+      client.override({ feature: true });
     });
     expect(screen.getByTestId("flag-feature").textContent).toBe("true");
 
     await act(async () => {
-      cleanup();
+      client.clearOverride("feature");
     });
     expect(screen.getByTestId("flag-feature").textContent).toBe("false");
+  });
+
+  it("clearOverrides() removes all overrides", async () => {
+    const client = createMockVexilloClient({ flags: { a: false, b: false } });
+
+    render(
+      <VexilloClientProvider client={client}>
+        <FlagConsumer flagKey="a" />
+        <FlagConsumer flagKey="b" />
+      </VexilloClientProvider>,
+    );
+
+    await act(async () => {
+      client.override({ a: true, b: true });
+    });
+    expect(screen.getByTestId("flag-a").textContent).toBe("true");
+    expect(screen.getByTestId("flag-b").textContent).toBe("true");
+
+    await act(async () => {
+      client.clearOverrides();
+    });
+    expect(screen.getByTestId("flag-a").textContent).toBe("false");
+    expect(screen.getByTestId("flag-b").textContent).toBe("false");
   });
 });

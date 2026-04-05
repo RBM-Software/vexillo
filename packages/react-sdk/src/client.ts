@@ -14,24 +14,25 @@ export interface VexilloClientConfig {
 export interface VexilloClient {
   /** Fetches flags from the server and notifies subscribers. */
   load(): Promise<void>;
-  /** Synchronous read. Priority: overrides > remote > fallbacks > defaultValue. */
-  getFlag(key: string, defaultValue?: boolean): boolean;
+  /** Synchronous read. Priority: overrides > remote > fallbacks > false. */
+  getFlag(key: string): boolean;
   /** Snapshot of all resolved flags (overrides + remote + fallbacks merged). */
   getAllFlags(): Record<string, boolean>;
   /**
    * Subscribe to changes on a specific key. Fires on load(), override(), and
-   * override cleanup. Returns an unsubscribe function.
+   * clearOverride(). Returns an unsubscribe function.
    */
   subscribe(key: string, listener: (value: boolean) => void): () => void;
   /**
    * Subscribe to any flag change. Returns an unsubscribe function.
    */
   subscribeAll(listener: (flags: Record<string, boolean>) => void): () => void;
-  /**
-   * Imperatively set flag values. Returns a cleanup function that restores
-   * previous values and notifies subscribers.
-   */
-  override(overrides: Record<string, boolean>): () => void;
+  /** Imperatively set flag values. Notifies subscribers immediately. */
+  override(overrides: Record<string, boolean>): void;
+  /** Remove an override for a specific key and notify subscribers. */
+  clearOverride(key: string): void;
+  /** Remove all overrides and notify subscribers. */
+  clearOverrides(): void;
   readonly isReady: boolean;
   readonly lastError: Error | null;
 }
@@ -47,11 +48,11 @@ export function createVexilloClient(config: VexilloClientConfig): VexilloClient 
   const keyListeners = new Map<string, Set<(value: boolean) => void>>();
   const allListeners = new Set<(flags: Record<string, boolean>) => void>();
 
-  function resolve(key: string, defaultValue?: boolean): boolean {
+  function resolve(key: string): boolean {
     if (key in overrides) return overrides[key];
     if (key in remoteFlags) return remoteFlags[key];
     if (key in fallbacks) return fallbacks[key];
-    return defaultValue ?? false;
+    return false;
   }
 
   function snapshot(): Record<string, boolean> {
@@ -65,8 +66,7 @@ export function createVexilloClient(config: VexilloClientConfig): VexilloClient 
   function notifyKey(key: string): void {
     const listeners = keyListeners.get(key);
     if (!listeners) return;
-    const value = resolve(key);
-    for (const l of listeners) l(value);
+    for (const l of listeners) l(resolve(key));
   }
 
   function notifyAll(): void {
@@ -87,8 +87,8 @@ export function createVexilloClient(config: VexilloClientConfig): VexilloClient 
     notifyAll();
   }
 
-  function getFlag(key: string, defaultValue?: boolean): boolean {
-    return resolve(key, defaultValue);
+  function getFlag(key: string): boolean {
+    return resolve(key);
   }
 
   function getAllFlags(): Record<string, boolean> {
@@ -113,19 +113,29 @@ export function createVexilloClient(config: VexilloClientConfig): VexilloClient 
     return () => allListeners.delete(listener);
   }
 
-  function override(newOverrides: Record<string, boolean>): () => void {
+  function override(newOverrides: Record<string, boolean>): void {
     const affected = Object.keys(newOverrides);
     for (const key of affected) overrides[key] = newOverrides[key];
     const snap = snapshot();
     for (const l of allListeners) l(snap);
     for (const key of affected) notifyKey(key);
+  }
 
-    return () => {
-      for (const key of affected) delete overrides[key];
-      const cleanSnap = snapshot();
-      for (const l of allListeners) l(cleanSnap);
-      for (const key of affected) notifyKey(key);
-    };
+  function clearOverride(key: string): void {
+    if (!(key in overrides)) return;
+    delete overrides[key];
+    const snap = snapshot();
+    for (const l of allListeners) l(snap);
+    notifyKey(key);
+  }
+
+  function clearOverrides(): void {
+    const affected = Object.keys(overrides);
+    if (affected.length === 0) return;
+    overrides = {};
+    const snap = snapshot();
+    for (const l of allListeners) l(snap);
+    for (const key of affected) notifyKey(key);
   }
 
   return {
@@ -135,6 +145,8 @@ export function createVexilloClient(config: VexilloClientConfig): VexilloClient 
     subscribe,
     subscribeAll,
     override,
+    clearOverride,
+    clearOverrides,
     get isReady() { return ready; },
     get lastError() { return error; },
   };

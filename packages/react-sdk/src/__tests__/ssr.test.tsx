@@ -4,7 +4,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { VexilloClientProvider } from "../provider";
 import { fetchFlags } from "../fetch-flags";
-import { createServerVexilloClient } from "../server";
+import { createVexilloClient } from "../client";
 import { createMockVexilloClient } from "../testing";
 import { useFlag } from "../use-flag";
 
@@ -19,7 +19,7 @@ describe("SSR — renderToStaticMarkup with initialFlags", () => {
     const client = createMockVexilloClient({ flags: { "some-flag": true } });
 
     const html = renderToStaticMarkup(
-      <VexilloClientProvider client={client} autoLoad={false}>
+      <VexilloClientProvider client={client}>
         <Child flagKey="some-flag" />
       </VexilloClientProvider>,
     );
@@ -36,17 +36,15 @@ describe("SSR — renderToStaticMarkup with initialFlags", () => {
     });
 
     const html = renderToStaticMarkup(
-      <VexilloClientProvider client={client} autoLoad={false}>
+      <VexilloClientProvider client={client}>
         <Child flagKey="some-flag" />
       </VexilloClientProvider>,
     );
 
     expect(html).toContain("true");
   });
-});
 
-describe("createServerVexilloClient", () => {
-  it("returns a ready client with fetched flags", async () => {
+  it("pre-fetch with fetchFlags then pass as initialFlags", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -54,9 +52,11 @@ describe("createServerVexilloClient", () => {
       }),
     } as unknown as Response);
 
-    const client = await createServerVexilloClient({
+    const initialFlags = await fetchFlags("https://vexillo.example.com", "sdk-key");
+    const client = createVexilloClient({
       baseUrl: "https://vexillo.example.com",
       apiKey: "sdk-key",
+      initialFlags,
     });
 
     expect(client.isReady).toBe(true);

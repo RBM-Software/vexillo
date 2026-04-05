@@ -1,10 +1,14 @@
 import { render, screen, act } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import React from "react";
 import { VexilloClientProvider } from "../provider";
 import { useFlag } from "../use-flag";
 import { createMockVexilloClient } from "../testing";
 import { createVexilloClient } from "../client";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function FlagDisplay({ flagKey }: { flagKey: string }) {
   const [value, isLoading] = useFlag(flagKey);
@@ -22,7 +26,7 @@ function renderWithFlags(
 ) {
   const client = createMockVexilloClient({ flags, fallbacks });
   return render(
-    <VexilloClientProvider client={client} autoLoad={false}>
+    <VexilloClientProvider client={client}>
       <FlagDisplay flagKey={flagKey} />
     </VexilloClientProvider>,
   );
@@ -50,12 +54,13 @@ describe("useFlag", () => {
   });
 
   it("isLoading is true while client is not ready", () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => {}));
     const client = createVexilloClient({
       baseUrl: "http://mock.invalid",
       apiKey: "mock",
     });
     render(
-      <VexilloClientProvider client={client} autoLoad={false}>
+      <VexilloClientProvider client={client}>
         <FlagDisplay flagKey="some-flag" />
       </VexilloClientProvider>,
     );
@@ -74,7 +79,7 @@ describe("useFlag", () => {
   it("re-renders with new value when client.override() is called", async () => {
     const client = createMockVexilloClient({ flags: { "dark-mode": false } });
     render(
-      <VexilloClientProvider client={client} autoLoad={false}>
+      <VexilloClientProvider client={client}>
         <FlagDisplay flagKey="dark-mode" />
       </VexilloClientProvider>,
     );
@@ -86,5 +91,24 @@ describe("useFlag", () => {
     });
 
     expect(screen.getByTestId("value").textContent).toBe("true");
+  });
+
+  it("re-renders when clearOverride() is called", async () => {
+    const client = createMockVexilloClient({ flags: { "dark-mode": false } });
+    render(
+      <VexilloClientProvider client={client}>
+        <FlagDisplay flagKey="dark-mode" />
+      </VexilloClientProvider>,
+    );
+
+    await act(async () => {
+      client.override({ "dark-mode": true });
+    });
+    expect(screen.getByTestId("value").textContent).toBe("true");
+
+    await act(async () => {
+      client.clearOverride("dark-mode");
+    });
+    expect(screen.getByTestId("value").textContent).toBe("false");
   });
 });

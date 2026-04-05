@@ -11,17 +11,12 @@ const VexilloClientContext = createContext<VexilloClient | null>(null);
 
 export interface VexilloClientProviderProps {
   client: VexilloClient;
-  /**
-   * When true, calls client.load() on mount.
-   * Set to false if you've already called load() (e.g. via createServerVexilloClient).
-   * Default: true
-   */
-  autoLoad?: boolean;
   children: ReactNode;
 }
 
 /**
- * Provides a VexilloClient to the React tree.
+ * Provides a VexilloClient to the React tree. Calls `client.load()` on mount
+ * if the client is not already ready (i.e. no `initialFlags` were provided).
  *
  * ```tsx
  * const client = createVexilloClient({ baseUrl: "...", apiKey: "..." });
@@ -33,19 +28,17 @@ export interface VexilloClientProviderProps {
  */
 export function VexilloClientProvider({
   client,
-  autoLoad = true,
   children,
 }: VexilloClientProviderProps): React.ReactElement {
   const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
-    // Re-render whenever any flag changes (covers load() and override()).
     const unsub = client.subscribeAll(() => forceUpdate());
-    if (autoLoad && !client.isReady) {
+    if (!client.isReady) {
       client.load();
     }
     return unsub;
-  }, [client, autoLoad]);
+  }, [client]);
 
   return (
     <VexilloClientContext.Provider value={client}>

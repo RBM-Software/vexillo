@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vexillo
 
-## Getting Started
+A self-hosted feature flag service with a React SDK.
 
-First, run the development server:
+## Monorepo structure
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+| Package | Description |
+|---|---|
+| `apps/web` | Next.js dashboard — manage flags, API keys, and users |
+| `packages/react-sdk` | `@vexillo/react-sdk` — React bindings for consuming flags |
+
+## Prerequisites
+
+- Node.js 18+
+- pnpm 10+
+- A [Neon](https://neon.tech) Postgres database
+
+## Getting started
+
+```sh
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Web app
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy the env template and fill in your values:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```sh
+cp apps/web/.env.local.example apps/web/.env.local
+```
 
-## Learn More
+Set up the database and seed initial data:
 
-To learn more about Next.js, take a look at the following resources:
+```sh
+pnpm --filter @vexillo/web db:setup
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Start the dev server:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```sh
+pnpm dev
+```
 
-## Deploy on Vercel
+The dashboard runs at [http://localhost:3000](http://localhost:3000).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## React SDK
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See [`packages/react-sdk/README.md`](packages/react-sdk/README.md) for installation and usage.
+
+## Scripts
+
+| Command | Description |
+|---|---|
+| `pnpm dev` | Start all apps in development mode |
+| `pnpm build` | Build all packages and apps |
+| `pnpm lint` | Lint all packages and apps |
+| `pnpm --filter @vexillo/react-sdk test` | Run SDK tests |
+| `pnpm --filter @vexillo/web db:studio` | Open Drizzle Studio |
