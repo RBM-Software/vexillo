@@ -3,7 +3,7 @@ name: Publish @vexillo/react-sdk
 on:
   push:
     tags:
-      - "sdk@*"
+      - "react-sdk@*"
 
 jobs:
   publish:
