@@ -1,10 +1,10 @@
 import React, {
   createContext,
-  use,
   useContext,
   type ReactNode,
 } from "react";
 import { fetchFlags } from "./fetch-flags";
+import { usePromise } from "./use-promise";
 
 export interface VexilloContextValue {
   flags: Record<string, boolean>;
@@ -117,7 +117,7 @@ export function VexilloProvider({
     flagPromise = getOrCreateFlagPromise(baseUrl, apiKey);
   }
 
-  const flags = use(flagPromise);
+  const flags = usePromise(flagPromise);
 
   return (
     <VexilloContext.Provider value={{ flags, fallbacks }}>
