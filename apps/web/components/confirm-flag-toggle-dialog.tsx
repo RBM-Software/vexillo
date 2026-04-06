@@ -38,58 +38,42 @@ export function ConfirmFlagToggleDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-pretty">
-            This will change the flag in{" "}
-            <span className="text-foreground">{environmentName}</span>.
+      <DialogContent showCloseButton className="gap-4 sm:max-w-sm sm:p-5">
+        <DialogHeader className="gap-3 pe-9">
+          <DialogTitle className="text-[0.9375rem] font-normal leading-snug text-muted-foreground">
+            <span className="font-heading font-medium text-foreground">{flagName}</span>
+            <span className="text-muted-foreground"> in {environmentName}</span>
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Confirm enabling or disabling this flag for {environmentName}.
+            Confirm changing flag {flagName}, key {flagKey}, in {environmentName}, from{" "}
+            {stateLabel(currentEnabled)} to {stateLabel(nextEnabled)}.
           </DialogDescription>
-          <div className="space-y-4 pt-1 text-sm text-muted-foreground">
-              <ul className="list-none space-y-3 pl-0">
-                <li>
-                  <span className="font-medium text-foreground">Flag</span>
-                  <div className="mt-0.5 font-medium text-foreground">{flagName}</div>
-                  <code className="mt-1 block font-mono text-xs text-muted-foreground">{flagKey}</code>
-                </li>
-                <li>
-                  <span className="font-medium text-foreground">Effective value after change</span>
-                  <div className="mt-0.5">{stateLabel(nextEnabled)}</div>
-                </li>
-                <li>
-                  <span className="font-medium text-foreground">Blast radius</span>
-                  <div className="mt-0.5 text-pretty">
-                    Applies to all traffic in <strong className="text-foreground">{environmentName}</strong> once
-                    your SDK picks up the latest configuration.
-                  </div>
-                </li>
-                <li>
-                  <span className="font-medium text-foreground">Change</span>
-                  <div className="mt-0.5 tabular-nums">
-                    {stateLabel(currentEnabled)} → {stateLabel(nextEnabled)}
-                  </div>
-                </li>
-                <li>
-                  <span className="font-medium text-foreground">Undo</span>
-                  <div className="mt-0.5 text-pretty">You can revert this anytime from the same control.</div>
-                </li>
-              </ul>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <code className="block font-mono text-xs text-muted-foreground/90">{flagKey}</code>
+            <p className="tabular-nums tracking-tight text-foreground">
+              {stateLabel(currentEnabled)}
+              <span className="mx-1.5 text-muted-foreground">→</span>
+              {stateLabel(nextEnabled)}
+            </p>
+            <p className="text-[0.8125rem] leading-relaxed">
+              Applies to traffic in this environment after the SDK picks up config. You can revert from the
+              same toggle.
+            </p>
           </div>
         </DialogHeader>
-        <DialogFooter>
-          <DialogClose render={<Button type="button" variant="outline" disabled={confirmBusy} />}>
+        <DialogFooter className="border-0 pt-0 sm:gap-2">
+          <DialogClose render={<Button type="button" variant="outline" size="sm" disabled={confirmBusy} />}>
             Cancel
           </DialogClose>
           <Button
             type="button"
+            size="sm"
             disabled={confirmBusy}
             onClick={() => {
               void Promise.resolve(onConfirm()).catch(() => {});
             }}
           >
-            {confirmBusy ? "Saving…" : "Confirm change"}
+            {confirmBusy ? "Saving…" : "Confirm"}
           </Button>
         </DialogFooter>
       </DialogContent>

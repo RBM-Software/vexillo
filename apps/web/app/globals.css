@@ -205,6 +205,39 @@
       transform: none;
     }
   }
+
+  /*
+   * Feature flags / environments tables — shared “elevated shell” and legible density.
+   */
+  .table-shell {
+    @apply overflow-hidden rounded-xl border border-border bg-card;
+    box-shadow: var(--surface-shadow);
+  }
+
+  .data-table {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .data-table-head-row {
+    @apply border-b border-border bg-muted/45 dark:bg-muted/20;
+  }
+
+  .data-table-th {
+    @apply text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground;
+  }
+
+  .data-table-body-row {
+    @apply transition-[background-color] duration-150 ease-out hover:bg-muted/25;
+  }
+
+  .data-table-primary-label {
+    @apply block text-[0.9375rem] font-medium tracking-[-0.015em] text-foreground;
+  }
+
+  .data-table-mono-meta {
+    @apply mt-1 block max-w-full font-mono text-[0.75rem] leading-snug text-muted-foreground;
+  }
+
   /* Sonner (shadcn): toast uses same elevation as other floating UI */
   .cn-toast {
     @apply border border-border bg-popover text-popover-foreground;

@@ -3,13 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Info, Plus, Search } from "lucide-react";
+import { Info, Loader2, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import CreateFlagForm from "@/app/components/create-flag-form";
 import { ConfirmFlagToggleDialog } from "@/components/confirm-flag-toggle-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,7 +20,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -51,41 +49,6 @@ export type FlagsPageFlag = {
   createdAt: string;
   states: Record<string, boolean>;
 };
-
-function FlagsTableSkeleton({ environmentName }: { environmentName: string }) {
-  return (
-    <div className="table-shell page-enter page-enter-delay-2" aria-busy="true" aria-label="Loading flags">
-      <Table className="data-table">
-        <TableHeader>
-          <TableRow className="data-table-head-row">
-            <TableHead className="data-table-th data-table-sticky-flag sticky left-0 z-30 min-w-[200px] border-r border-border ps-5">
-              Flag
-            </TableHead>
-            <TableHead className="data-table-th text-center whitespace-normal">
-              <span className="inline-block max-w-[7rem] leading-tight">{environmentName}</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <TableRow key={i} className="data-table-body-row border-l-2 border-l-border">
-              <TableCell className="data-table-sticky-flag sticky left-0 z-20 border-r border-border py-3 ps-5">
-                <Skeleton className="h-4 w-36" />
-                <Skeleton className="mt-2 h-3 w-28" />
-                <Skeleton className="mt-3 h-3 w-20" />
-              </TableCell>
-              <TableCell className="text-center align-middle">
-                <div className="flex justify-center">
-                  <Skeleton className="h-5 w-9 rounded-full" />
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
 
 export default function FlagsPageClient({
   initialFlags,
@@ -261,7 +224,7 @@ export default function FlagsPageClient({
           {isAdmin ? (
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger render={<Button className="shrink-0 gap-2" />}>
-                <Plus className="size-4" />
+                <Plus className="size-4" aria-hidden />
                 New flag
               </DialogTrigger>
               <DialogContent
@@ -299,7 +262,7 @@ export default function FlagsPageClient({
           />
         </div>
         {initialEnvironments.length > 0 ? (
-          <div className="flex w-full min-w-[12rem] flex-col gap-1.5 sm:w-auto sm:max-w-[16rem]">
+          <div className="flex w-full min-w-48 flex-col gap-1.5 sm:w-auto sm:max-w-[16rem]">
             <Label htmlFor="primary-env" className="text-xs text-muted-foreground">
               Showing values for
             </Label>
@@ -347,9 +310,16 @@ export default function FlagsPageClient({
           <AlertDescription>Try another search term.</AlertDescription>
         </Alert>
       ) : listIsEmpty && isListPending ? (
-        primaryEnv ? (
-          <FlagsTableSkeleton environmentName={primaryEnv.name} />
-        ) : null
+        <div
+          className="page-enter page-enter-delay-2 flex flex-col items-center justify-center gap-3 rounded-lg border border-border/70 bg-muted/25 py-16 text-center"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          aria-label="Loading flags"
+        >
+          <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden />
+          <p className="text-sm text-muted-foreground">Updating flags…</p>
+        </div>
       ) : listIsEmpty ? (
         <Alert className="page-enter page-enter-delay-2 max-w-lg [&>svg]:text-muted-foreground">
           <Info aria-hidden />
@@ -363,12 +333,14 @@ export default function FlagsPageClient({
             ) : null}
           </AlertDescription>
         </Alert>
-      ) : isListPending ? (
-        primaryEnv ? (
-          <FlagsTableSkeleton environmentName={primaryEnv.name} />
-        ) : null
       ) : primaryEnv ? (
-        <div className="table-shell page-enter page-enter-delay-2">
+        <div
+          className={cn(
+            "table-shell page-enter page-enter-delay-2 transition-opacity duration-200",
+            isListPending && "pointer-events-none opacity-55",
+          )}
+          aria-busy={isListPending}
+        >
           <Table ref={tableScrollRef} className="data-table">
             <TableHeader>
               <TableRow className="data-table-head-row">
@@ -384,7 +356,7 @@ export default function FlagsPageClient({
                   className="data-table-th text-center whitespace-normal"
                   title={primaryEnv.name}
                 >
-                  <span className="inline-block max-w-[12rem] leading-tight">{primaryEnv.name}</span>
+                  <span className="inline-block max-w-48 leading-tight">{primaryEnv.name}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -394,20 +366,6 @@ export default function FlagsPageClient({
                   (e) => flag.states[e.slug],
                 ).length;
                 const envTotal = initialEnvironments.length;
-                const rollout =
-                  envTotal === 0
-                    ? "muted"
-                    : enabledCount === 0
-                      ? "off"
-                      : enabledCount === envTotal
-                        ? "full"
-                        : "partial";
-                const rowBorder =
-                  rollout === "full"
-                    ? "border-l-2 border-l-foreground/20 dark:border-l-foreground/35"
-                    : rollout === "partial"
-                      ? "border-l-2 border-l-amber-600/50 dark:border-l-amber-400/45"
-                      : "border-l-2 border-l-border";
 
                 const on = flag.states[primaryEnv.slug] ?? false;
                 const busy = toggleBusy === `${flag.key}:${primaryEnv.id}`;
@@ -415,7 +373,7 @@ export default function FlagsPageClient({
                   confirmToggle?.flagKey === flag.key && confirmToggle.envId === primaryEnv.id;
 
                 return (
-                  <TableRow key={flag.key} className={cn("group/flag data-table-body-row", rowBorder)}>
+                  <TableRow key={flag.key} className="group/flag data-table-body-row">
                     <TableCell
                       className={cn(
                         "data-table-sticky-flag sticky left-0 z-20 border-r border-border py-3 align-top transition-[box-shadow,background-color] duration-200 ease-out group-hover/flag:bg-muted ps-5",
@@ -445,15 +403,7 @@ export default function FlagsPageClient({
                             className="mt-2 text-[0.6875rem] tabular-nums tracking-wide text-muted-foreground"
                             title={`Enabled in ${enabledCount} of ${envTotal} environments`}
                           >
-                            <span
-                              className={
-                                rollout === "full"
-                                  ? "font-medium text-foreground"
-                                  : rollout === "partial"
-                                    ? "font-medium text-amber-800 dark:text-amber-400"
-                                    : undefined
-                              }
-                            >
+                            <span className="font-medium text-foreground">
                               {enabledCount}/{envTotal}
                             </span>{" "}
                             <span className="text-muted-foreground">environments on</span>
@@ -463,7 +413,13 @@ export default function FlagsPageClient({
                     </TableCell>
                     <TableCell className="text-center align-middle">
                       {isAdmin ? (
-                        <div className="flex justify-center">
+                        <div className="flex items-center justify-center gap-2">
+                          {busy ? (
+                            <Loader2
+                              className="size-3.5 shrink-0 animate-spin text-muted-foreground"
+                              aria-hidden
+                            />
+                          ) : null}
                           <Switch
                             checked={on}
                             disabled={busy || dialogForThisCell}
@@ -478,18 +434,19 @@ export default function FlagsPageClient({
                                 nextEnabled: checked,
                               });
                             }}
-                            aria-label={`${flag.name} in ${primaryEnv.name}`}
+                            aria-label={`${flag.name} in ${primaryEnv.name}, ${on ? "on" : "off"}. Confirm to change.`}
                           />
                         </div>
                       ) : (
-                        <div className="flex justify-center">
-                          <Badge
-                            variant={on ? "default" : "secondary"}
-                            className="rounded-lg px-2.5 font-mono text-[0.65rem] tracking-wide"
-                          >
-                            {on ? "ON" : "OFF"}
-                          </Badge>
-                        </div>
+                        <p
+                          role="status"
+                          className={cn(
+                            "mx-auto text-sm font-medium",
+                            on ? "text-foreground" : "text-muted-foreground",
+                          )}
+                        >
+                          {on ? "Enabled" : "Disabled"}
+                        </p>
                       )}
                     </TableCell>
                   </TableRow>
