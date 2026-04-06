@@ -73,6 +73,7 @@ export async function getDashboardFlagsAndEnvironments() {
 }
 
 export type DashboardFlagRolloutRow = {
+  id: string;
   name: string;
   slug: string;
   enabled: boolean;
@@ -88,6 +89,7 @@ export async function getDashboardFlagByKey(key: string) {
       createdAt: flags.createdAt,
       envSlug: environments.slug,
       envName: environments.name,
+      environmentId: environments.id,
       enabled: sql<boolean>`COALESCE(${flagStates.enabled}, false)`,
     })
     .from(flags)
@@ -109,6 +111,7 @@ export async function getDashboardFlagByKey(key: string) {
     for (const row of rows) {
       states[row.envSlug] = row.enabled;
       rollout.push({
+        id: row.environmentId,
         name: row.envName,
         slug: row.envSlug,
         enabled: row.enabled,
