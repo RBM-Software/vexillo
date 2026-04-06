@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Info, Plus, Search } from "lucide-react";
+import { toast } from "sonner";
 
 import CreateFlagForm from "@/app/components/create-flag-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -27,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 type EnvironmentRef = { id: string; name: string; slug: string };
 
@@ -53,6 +55,15 @@ export default function FlagsPageClient({
   const [query, setQuery] = React.useState("");
   const [createOpen, setCreateOpen] = React.useState(false);
   const [toggleBusy, setToggleBusy] = React.useState<string | null>(null);
+  const tableScrollRef = React.useRef<HTMLDivElement>(null);
+  /** Drop-shadow on sticky column only while scrolled — signals overlap, not default chrome. */
+  const [stickyEdgeShadow, setStickyEdgeShadow] = React.useState(false);
+
+  const syncStickyEdgeShadow = React.useCallback(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    setStickyEdgeShadow(el.scrollLeft > 1);
+  }, []);
 
   React.useEffect(() => {
     setFlags(initialFlags);
@@ -68,6 +79,22 @@ export default function FlagsPageClient({
         f.description.toLowerCase().includes(q),
     );
   }, [flags, query]);
+
+  React.useLayoutEffect(() => {
+    syncStickyEdgeShadow();
+  }, [syncStickyEdgeShadow, filtered.length, initialEnvironments.length]);
+
+  React.useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => syncStickyEdgeShadow());
+    ro.observe(el);
+    el.addEventListener("scroll", syncStickyEdgeShadow, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", syncStickyEdgeShadow);
+    };
+  }, [syncStickyEdgeShadow]);
 
   async function handleCreate(data: {
     name: string;
@@ -96,7 +123,11 @@ export default function FlagsPageClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ environmentId }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(typeof err.error === "string" ? err.error : "Could not update flag");
+        return;
+      }
       const { enabled } = (await res.json()) as { enabled: boolean };
       setFlags((prev) =>
         prev.map((f) => {
@@ -191,10 +222,16 @@ export default function FlagsPageClient({
         </Alert>
       ) : (
         <div className="surface-card page-enter page-enter-delay-2 overflow-hidden">
-          <Table>
+          {/* border-separate: sticky column backgrounds fail with default border-collapse: collapse */}
+          <Table ref={tableScrollRef} className="border-separate border-spacing-0">
             <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[200px] ps-5 font-medium text-foreground">
+              <TableRow className="hover:bg-transparent [&_th]:border-b [&_th]:border-border">
+                <TableHead
+                  className={cn(
+                    "sticky left-0 z-20 min-w-[200px] border-r border-border bg-card ps-5 font-medium text-foreground transition-shadow duration-200 ease-out",
+                    stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
+                  )}
+                >
                   Flag
                 </TableHead>
                 <TableHead className="hidden min-w-[180px] font-medium text-foreground md:table-cell">
@@ -212,19 +249,66 @@ export default function FlagsPageClient({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((flag) => (
-                <TableRow key={flag.key}>
-                  <TableCell className="ps-5 align-top">
+              {filtered.map((flag) => {
+                const enabledCount = initialEnvironments.filter(
+                  (e) => flag.states[e.slug],
+                ).length;
+                const envTotal = initialEnvironments.length;
+                const rollout =
+                  envTotal === 0
+                    ? "muted"
+                    : enabledCount === 0
+                      ? "off"
+                      : enabledCount === envTotal
+                        ? "full"
+                        : "partial";
+                const rowBorder =
+                  rollout === "full"
+                    ? "border-l-2 border-l-foreground/20 dark:border-l-foreground/35"
+                    : rollout === "partial"
+                      ? "border-l-2 border-l-amber-600/50 dark:border-l-amber-400/45"
+                      : "border-l-2 border-l-border";
+
+                return (
+                <TableRow
+                  key={flag.key}
+                  className={`group/flag ${rowBorder} [&_td]:border-b [&_td]:border-border`}
+                >
+                  <TableCell
+                    className={cn(
+                      "sticky left-0 z-10 border-r border-border bg-card py-3 align-top transition-[box-shadow,background-color] duration-200 ease-out group-hover/flag:bg-muted ps-5",
+                      stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
+                    )}
+                  >
                     <Link
                       href={`/flags/${encodeURIComponent(flag.key)}`}
-                      className="group block py-1"
+                      className="group/link block py-1"
                     >
-                      <span className="text-[0.9375rem] font-medium text-foreground group-hover:text-primary">
+                      <span className="text-[0.9375rem] font-medium text-foreground group-hover/link:text-primary">
                         {flag.name}
                       </span>
                       <code className="mt-1 block truncate font-mono text-[0.72rem] text-muted-foreground">
                         {flag.key}
                       </code>
+                      {envTotal > 0 ? (
+                        <p
+                          className="mt-2 text-[0.6875rem] tabular-nums tracking-wide text-muted-foreground"
+                          title={`Enabled in ${enabledCount} of ${envTotal} environments`}
+                        >
+                          <span
+                            className={
+                              rollout === "full"
+                                ? "font-medium text-foreground"
+                                : rollout === "partial"
+                                  ? "font-medium text-amber-800 dark:text-amber-400"
+                                  : undefined
+                            }
+                          >
+                            {enabledCount}/{envTotal}
+                          </span>{" "}
+                          <span className="text-muted-foreground">environments on</span>
+                        </p>
+                      ) : null}
                     </Link>
                   </TableCell>
                   <TableCell className="hidden max-w-xs align-top md:table-cell">
@@ -260,7 +344,8 @@ export default function FlagsPageClient({
                     );
                   })}
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </div>

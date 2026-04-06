@@ -525,7 +525,7 @@ export default function EnvironmentsClient({
           </AlertDescription>
         </Alert>
       ) : (
-        <Card className="page-enter page-enter-delay-1 gap-0 overflow-hidden py-0 shadow-sm">
+        <Card className="page-enter page-enter-delay-1 gap-0 overflow-hidden py-0">
           <CardContent className="p-0">
           <Table>
             <TableHeader>

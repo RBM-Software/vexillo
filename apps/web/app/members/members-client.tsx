@@ -56,7 +56,7 @@ export default function MembersClient({
         </p>
       </header>
 
-      <Card className="surface-card page-enter page-enter-delay-1 gap-0 overflow-hidden py-0 shadow-none">
+      <Card className="surface-card page-enter page-enter-delay-1 gap-0 overflow-hidden py-0">
         <CardContent className="p-0">
           {members.map((member, index) => (
             <div key={member.id}>

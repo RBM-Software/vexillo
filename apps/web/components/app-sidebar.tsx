@@ -84,12 +84,16 @@ export function AppSidebar({
         {session ? (
           <>
             <p
-              className="mb-3 truncate text-[0.7rem] leading-snug text-sidebar-foreground/70"
+              className="mb-3 truncate text-xs leading-snug text-sidebar-foreground/80"
               title={session.user.email}
             >
               {session.user.email}
             </p>
-            <SignOutButton variant="outline" size="sm" className="w-full justify-center" />
+            <SignOutButton
+              variant="outline"
+              size="sm"
+              className="w-full justify-center border-sidebar-border bg-sidebar-accent/35 text-sidebar-foreground shadow-[var(--surface-shadow-xs)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:bg-sidebar-accent/25"
+            />
           </>
         ) : null}
       </SidebarFooter>

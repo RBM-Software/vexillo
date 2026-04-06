@@ -4,9 +4,13 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+const Table = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<"table">
+>(function Table({ className, ...props }, ref) {
   return (
     <div
+      ref={ref}
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
     >
@@ -17,7 +21,8 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
       />
     </div>
   )
-}
+})
+Table.displayName = "Table"
 
 function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
