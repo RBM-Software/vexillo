@@ -258,6 +258,15 @@ export default function EnvironmentsClient({
   const originPersistTimersRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const originPendingRef = React.useRef<Record<string, string[]>>({});
 
+  const tableScrollRef = React.useRef<HTMLDivElement>(null);
+  const [stickyEdgeShadow, setStickyEdgeShadow] = React.useState(false);
+
+  const syncStickyEdgeShadow = React.useCallback(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    setStickyEdgeShadow(el.scrollLeft > 1);
+  }, []);
+
   React.useEffect(
     () => () => {
       for (const t of Object.values(originPersistTimersRef.current)) {
@@ -273,6 +282,22 @@ export default function EnvironmentsClient({
       Object.fromEntries(initialEnvironments.map((e) => [e.id, [...e.allowedOrigins]])),
     );
   }, [initialEnvironments]);
+
+  React.useLayoutEffect(() => {
+    syncStickyEdgeShadow();
+  }, [syncStickyEdgeShadow, environments.length, isAdmin]);
+
+  React.useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => syncStickyEdgeShadow());
+    ro.observe(el);
+    el.addEventListener("scroll", syncStickyEdgeShadow, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", syncStickyEdgeShadow);
+    };
+  }, [syncStickyEdgeShadow, environments.length]);
 
   function originRowsFor(id: string, fallback: string[]) {
     if (originDrafts[id] !== undefined) return originDrafts[id];
@@ -409,18 +434,29 @@ export default function EnvironmentsClient({
   return (
     <div className="page-container page-container-wide flex min-w-0 flex-1 flex-col pb-16">
       <header className="page-enter mb-8 md:mb-10">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-lg">
-            <p className="page-eyebrow">Access control</p>
-            <h1 className="page-title mt-1">Environments</h1>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              SDK keys and per-environment browser origins. New keys show once in a dialog — copy them
-              before closing.
-            </p>
-          </div>
-          {isAdmin ? (
+        <div className="max-w-2xl">
+          <p className="page-eyebrow">Access control</p>
+          <h1 className="page-title mt-1">Environments</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            SDK keys and per-environment browser origins. New keys show once in a dialog — copy them
+            before closing.
+          </p>
+        </div>
+      </header>
+
+      {isAdmin ? (
+        <div className="page-enter page-enter-delay-1 mb-5 flex flex-col gap-4 sm:flex-row sm:justify-end sm:gap-x-5 sm:gap-y-3">
+          <div className="flex w-full flex-col gap-1.5 sm:w-auto">
+            <span className="invisible text-xs font-medium select-none" aria-hidden>
+              Actions
+            </span>
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <Button type="button" className="shrink-0 gap-2" onClick={() => setCreateOpen(true)}>
+              <Button
+                type="button"
+                size="lg"
+                className="w-full shrink-0 gap-2 sm:w-auto"
+                onClick={() => setCreateOpen(true)}
+              >
                 <Plus className="size-4" aria-hidden />
                 Add environment
               </Button>
@@ -439,6 +475,7 @@ export default function EnvironmentsClient({
                       value={newEnvName}
                       onChange={(e) => setNewEnvName(e.target.value)}
                       placeholder="Production"
+                      className="rounded-lg shadow-xs"
                       required
                     />
                   </div>
@@ -456,9 +493,9 @@ export default function EnvironmentsClient({
                 </form>
               </DialogContent>
             </Dialog>
-          ) : null}
+          </div>
         </div>
-      </header>
+      ) : null}
 
       <Dialog open={!!secretDialog} onOpenChange={(o) => !o && setSecretDialog(null)}>
         <DialogContent className="gap-5 sm:max-w-xl" showCloseButton>
@@ -524,11 +561,16 @@ export default function EnvironmentsClient({
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="table-shell page-enter page-enter-delay-1">
-          <Table className="data-table">
+        <div className="table-shell page-enter page-enter-delay-2">
+          <Table ref={tableScrollRef} className="data-table">
             <TableHeader>
               <TableRow className="data-table-head-row">
-                <TableHead className="data-table-th min-w-48 ps-5">
+                <TableHead
+                  className={cn(
+                    "data-table-th data-table-sticky-flag sticky left-0 z-30 min-w-[200px] border-r border-border ps-5 transition-shadow duration-200 ease-out",
+                    stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
+                  )}
+                >
                   Environment
                 </TableHead>
                 <TableHead className="data-table-th hidden min-w-36 md:table-cell">
@@ -539,7 +581,7 @@ export default function EnvironmentsClient({
                 </TableHead>
                 {isAdmin ? (
                   <TableHead className="data-table-th w-[1%] whitespace-nowrap pe-5 text-end">
-                    Actions
+                    <span className="normal-case tracking-normal">Actions</span>
                   </TableHead>
                 ) : null}
               </TableRow>
@@ -548,11 +590,23 @@ export default function EnvironmentsClient({
               {environments.map((env) => {
                 const originRows = originRowsFor(env.id, env.allowedOrigins);
                 return (
-                  <TableRow key={env.id} className="data-table-body-row">
-                    <TableCell className="min-w-0 whitespace-normal ps-5 align-top">
+                  <TableRow key={env.id} className="group/env data-table-body-row">
+                    <TableCell
+                      className={cn(
+                        "data-table-sticky-flag sticky left-0 z-20 min-w-0 border-r border-border py-3 align-top transition-[box-shadow,background-color] duration-200 ease-out group-hover/env:bg-muted ps-5",
+                        stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
+                      )}
+                    >
                       <div className="min-w-0 py-1">
-                        <div className="data-table-primary-label">{env.name}</div>
-                        <code className="data-table-mono-meta">{env.slug}</code>
+                        <div
+                          className="data-table-primary-label normal-case"
+                          title={`${env.name} — ${env.slug}`}
+                        >
+                          {env.name}
+                        </div>
+                        <code className="data-table-mono-meta" title={env.slug}>
+                          {env.slug}
+                        </code>
                         {env.keyHint ? (
                           <code
                             className={cn(
@@ -591,7 +645,7 @@ export default function EnvironmentsClient({
                       </div>
                     </TableCell>
                     {isAdmin ? (
-                      <TableCell className="whitespace-normal align-top pe-5">
+                      <TableCell className="w-[1%] whitespace-nowrap align-top pe-5">
                         <div className="flex justify-end py-1">
                           <Button
                             type="button"
@@ -621,6 +675,14 @@ export default function EnvironmentsClient({
               })}
             </TableBody>
           </Table>
+          <p
+            role="status"
+            className="border-t border-border px-4 py-3 text-end text-xs tabular-nums text-muted-foreground sm:px-5"
+            aria-live="polite"
+          >
+            <span className="font-medium text-foreground">{environments.length}</span>
+            {environments.length === 1 ? " environment" : " environments"}
+          </p>
         </div>
       )}
     </div>

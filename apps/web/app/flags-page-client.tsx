@@ -211,19 +211,67 @@ export default function FlagsPageClient({
   return (
     <div className="page-container page-container-wide flex flex-1 flex-col">
       <header className="page-enter mb-8 md:mb-10">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-lg">
-            <h1 className="page-title">Feature flags</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Toggle flags per environment. Changes apply on the next SDK fetch.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Open a flag&apos;s page to compare all environments in one place.
-            </p>
+        <div className="max-w-2xl">
+          <h1 className="page-title">Feature flags</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Toggle flags per environment. Changes apply on the next SDK fetch.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Open a flag&apos;s page to compare all environments in one place.
+          </p>
+        </div>
+      </header>
+
+      <div className="page-enter page-enter-delay-1 mb-5 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-5 sm:gap-y-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-md">
+          <Label htmlFor="flag-search" className="text-xs font-medium text-muted-foreground">
+            Search
+          </Label>
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              id="flag-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search flags…"
+              className="h-9 rounded-lg ps-10 shadow-xs"
+              aria-label="Search flags"
+            />
           </div>
-          {isAdmin ? (
+        </div>
+        {initialEnvironments.length > 0 ? (
+          <div className="flex w-full min-w-48 flex-col gap-1.5 sm:w-auto sm:max-w-[16rem]">
+            <Label htmlFor="primary-env" className="text-xs font-medium text-muted-foreground">
+              Showing values for
+            </Label>
+            <select
+              id="primary-env"
+              className={cn(
+                "h-9 w-full cursor-pointer rounded-lg border border-input bg-background px-3 text-sm shadow-xs",
+                "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              )}
+              value={primaryEnv?.id ?? ""}
+              onChange={(e) => setPrimaryEnvId(e.target.value)}
+              aria-label="Environment shown in list"
+            >
+              {initialEnvironments.map((env) => (
+                <option key={env.id} value={env.id}>
+                  {env.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        {isAdmin ? (
+          <div className="flex w-full flex-col gap-1.5 sm:ms-auto sm:w-auto">
+            <span className="invisible text-xs font-medium select-none" aria-hidden>
+              Actions
+            </span>
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger render={<Button className="shrink-0 gap-2" />}>
+              <DialogTrigger render={<Button size="lg" className="w-full shrink-0 gap-2 sm:w-auto" />}>
                 <Plus className="size-4" aria-hidden />
                 New flag
               </DialogTrigger>
@@ -243,51 +291,8 @@ export default function FlagsPageClient({
                 />
               </DialogContent>
             </Dialog>
-          ) : null}
-        </div>
-      </header>
-
-      <div className="page-enter page-enter-delay-1 mb-6 flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
-        <div className="relative max-w-md min-w-0 flex-1">
-          <Search
-            className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search flags…"
-            className="h-9 ps-10"
-            aria-label="Search flags"
-          />
-        </div>
-        {initialEnvironments.length > 0 ? (
-          <div className="flex w-full min-w-48 flex-col gap-1.5 sm:w-auto sm:max-w-[16rem]">
-            <Label htmlFor="primary-env" className="text-xs text-muted-foreground">
-              Showing values for
-            </Label>
-            <select
-              id="primary-env"
-              className={cn(
-                "h-9 w-full cursor-pointer rounded-md border border-input bg-background px-3 text-sm shadow-xs",
-                "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-              )}
-              value={primaryEnv?.id ?? ""}
-              onChange={(e) => setPrimaryEnvId(e.target.value)}
-              aria-label="Environment shown in list"
-            >
-              {initialEnvironments.map((env) => (
-                <option key={env.id} value={env.id}>
-                  {env.name}
-                </option>
-              ))}
-            </select>
           </div>
         ) : null}
-        <p className="text-sm tabular-nums text-muted-foreground lg:ms-auto">
-          <span className="font-medium text-foreground">{filtered.length}</span>
-          {filtered.length === 1 ? " flag" : " flags"}
-        </p>
       </div>
 
       {initialEnvironments.length === 0 ? (
@@ -353,10 +358,12 @@ export default function FlagsPageClient({
                   Flag
                 </TableHead>
                 <TableHead
-                  className="data-table-th text-center whitespace-normal"
-                  title={primaryEnv.name}
+                  className="data-table-th w-[1%] text-center whitespace-normal"
+                  title={`In ${primaryEnv.name}`}
                 >
-                  <span className="inline-block max-w-48 leading-tight">{primaryEnv.name}</span>
+                  <span className="inline-block max-w-48 leading-tight normal-case tracking-normal">
+                    {primaryEnv.name}
+                  </span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -376,23 +383,23 @@ export default function FlagsPageClient({
                   <TableRow key={flag.key} className="group/flag data-table-body-row">
                     <TableCell
                       className={cn(
-                        "data-table-sticky-flag sticky left-0 z-20 border-r border-border py-3 align-top transition-[box-shadow,background-color] duration-200 ease-out group-hover/flag:bg-muted ps-5",
+                        "data-table-sticky-flag sticky left-0 z-20 min-w-0 border-r border-border py-3 align-top transition-[box-shadow,background-color] duration-200 ease-out group-hover/flag:bg-muted ps-5",
                         stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
                       )}
                     >
                       <Link
                         href={`/flags/${encodeURIComponent(flag.key)}`}
-                        className="group/link block py-1"
+                        className="group/link block min-w-0 py-1"
                         title={
-                          flag.description.trim()
-                            ? `${flag.name} — ${flag.description.trim()}`
-                            : undefined
+                          [flag.name, flag.key !== flag.name ? flag.key : null, flag.description.trim() || null]
+                            .filter(Boolean)
+                            .join(" — ") || undefined
                         }
                       >
                         <span className="data-table-primary-label group-hover/link:text-primary">
                           {flag.name}
                         </span>
-                        <code className="data-table-mono-meta truncate">{flag.key}</code>
+                        <code className="data-table-mono-meta">{flag.key}</code>
                         {flag.description.trim() ? (
                           <p className="mt-1.5 max-w-[20rem] line-clamp-2 text-[0.8125rem] leading-snug text-muted-foreground">
                             {flag.description.trim()}
@@ -411,7 +418,7 @@ export default function FlagsPageClient({
                         ) : null}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-center align-middle">
+                    <TableCell className="w-[1%] text-center align-middle whitespace-nowrap">
                       {isAdmin ? (
                         <div className="flex items-center justify-center gap-2">
                           {busy ? (
@@ -454,6 +461,26 @@ export default function FlagsPageClient({
               })}
             </TableBody>
           </Table>
+          <p
+            role="status"
+            className="border-t border-border px-4 py-3 text-end text-xs tabular-nums text-muted-foreground sm:px-5"
+            aria-live="polite"
+          >
+            {query.trim() ? (
+              <>
+                <span className="font-medium text-foreground">{filtered.length}</span>
+                {filtered.length === 1 ? " match" : " matches"}
+                <span className="text-muted-foreground"> · </span>
+                <span className="font-medium text-foreground">{flags.length}</span>
+                {flags.length === 1 ? " flag" : " flags"} total
+              </>
+            ) : (
+              <>
+                <span className="font-medium text-foreground">{flags.length}</span>
+                {flags.length === 1 ? " flag" : " flags"} total
+              </>
+            )}
+          </p>
         </div>
       ) : null}
 
