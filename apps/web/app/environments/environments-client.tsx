@@ -5,7 +5,6 @@ import {
   Check,
   Copy,
   Info,
-  KeyRound,
   Loader2,
   Plus,
   RotateCw,
@@ -47,19 +46,8 @@ export type EnvironmentRow = {
   keyHint: string | null;
 };
 
-function KeyHintChip({ hint }: { hint: string }) {
-  return (
-    <Badge
-      variant="secondary"
-      className="h-auto max-w-full min-w-0 gap-1.5 py-1 pr-2.5 pl-2 font-mono text-[0.6875rem] font-normal tabular-nums"
-    >
-      <KeyRound className="size-3.5 shrink-0 opacity-70" aria-hidden />
-      <span className="min-w-0 truncate" title={hint}>
-        {hint}
-      </span>
-    </Badge>
-  );
-}
+const keyHintClassName =
+  "block min-w-0 truncate font-mono text-[0.8125rem] font-normal tabular-nums text-muted-foreground";
 
 const originChipBadgeClass =
   "h-auto max-w-[min(100%,26rem)] min-h-6 gap-1 py-0.5 pl-2 font-mono text-[0.6875rem] font-normal whitespace-normal";
@@ -107,10 +95,7 @@ function OriginAllowlistChips({
         className="relative flex w-full min-w-0 max-w-full flex-wrap items-center gap-2"
       >
         {isEmpty && disabled ? (
-          <span className="text-sm text-muted-foreground">No origins in the allowlist.</span>
-        ) : null}
-        {isEmpty && !disabled ? (
-          <span className="text-sm text-muted-foreground">No origins yet.</span>
+          <span className="text-sm text-muted-foreground">—</span>
         ) : null}
         {value.map((origin, index) => {
           const isWildcard = origin === "*";
@@ -241,6 +226,7 @@ export default function EnvironmentsClient({
   const [secretDialog, setSecretDialog] = React.useState<string | null>(null);
   const [secretCopied, setSecretCopied] = React.useState(false);
   const copyResetRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const secretFieldRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     setSecretCopied(false);
@@ -248,6 +234,17 @@ export default function EnvironmentsClient({
       clearTimeout(copyResetRef.current);
       copyResetRef.current = null;
     }
+  }, [secretDialog]);
+
+  React.useEffect(() => {
+    if (!secretDialog) return;
+    const id = requestAnimationFrame(() => {
+      const el = secretFieldRef.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    });
+    return () => cancelAnimationFrame(id);
   }, [secretDialog]);
 
   React.useEffect(
@@ -376,17 +373,36 @@ export default function EnvironmentsClient({
     }
   }
 
+  function flashCopied() {
+    if (copyResetRef.current) clearTimeout(copyResetRef.current);
+    setSecretCopied(true);
+    copyResetRef.current = setTimeout(() => {
+      setSecretCopied(false);
+      copyResetRef.current = null;
+    }, 2000);
+  }
+
   async function copySecret() {
     if (!secretDialog) return;
     try {
       await navigator.clipboard.writeText(secretDialog);
-      if (copyResetRef.current) clearTimeout(copyResetRef.current);
-      setSecretCopied(true);
-      copyResetRef.current = setTimeout(() => {
-        setSecretCopied(false);
-        copyResetRef.current = null;
-      }, 2000);
+      flashCopied();
+      return;
     } catch {
+      // Clipboard API can fail (permissions, non-secure context). Fall back to selection + execCommand.
+    }
+    const el = secretFieldRef.current;
+    if (el) {
+      try {
+        el.focus();
+        el.select();
+        const ok = document.execCommand("copy");
+        if (ok) flashCopied();
+        else setSecretCopied(false);
+      } catch {
+        setSecretCopied(false);
+      }
+    } else {
       setSecretCopied(false);
     }
   }
@@ -446,22 +462,38 @@ export default function EnvironmentsClient({
       </header>
 
       <Dialog open={!!secretDialog} onOpenChange={(o) => !o && setSecretDialog(null)}>
-        <DialogContent className="sm:max-w-lg" showCloseButton>
-          <DialogHeader>
-            <DialogTitle>API key</DialogTitle>
-            <DialogDescription>
-              Copy and store it securely. Only a masked hint is kept in the dashboard.
+        <DialogContent className="gap-5 sm:max-w-xl" showCloseButton>
+          <DialogHeader className="gap-2">
+            <DialogTitle className="text-balance tracking-tight">API key</DialogTitle>
+            <DialogDescription className="text-pretty leading-snug">
+              Shown once. After closing you only see a hint in the table—use{" "}
+              <span className="font-medium text-foreground/90">Rotate key</span> for a new secret.
             </DialogDescription>
           </DialogHeader>
-          <Card className="gap-0 border-0 bg-transparent py-0 shadow-none">
-            <CardContent className="rounded-lg border border-border/80 bg-muted/30 px-4 py-3.5 font-mono text-xs leading-relaxed break-all dark:bg-muted/15">
-              {secretDialog}
-            </CardContent>
-          </Card>
-          <DialogFooter>
+          <div className="min-w-0 space-y-2">
+            <Label htmlFor="env-api-key-secret" className="sr-only">
+              API key
+            </Label>
+            <div className="rounded-lg border border-border bg-muted/40 px-2.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:bg-muted/25 dark:shadow-none">
+              <Input
+                ref={secretFieldRef}
+                id="env-api-key-secret"
+                readOnly
+                value={secretDialog ?? ""}
+                title={secretDialog ?? undefined}
+                aria-readonly="true"
+                spellCheck={false}
+                autoComplete="off"
+                className="h-8 min-w-0 overflow-x-auto border-0 bg-transparent px-0 font-mono text-[0.8125rem] leading-normal tracking-[-0.01em] shadow-none ring-0 selection:bg-foreground/12 focus-visible:ring-0 dark:bg-transparent md:text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-3 [&>*:first-child]:text-muted-foreground">
+            <Button type="button" variant="ghost" onClick={() => setSecretDialog(null)}>
+              Done
+            </Button>
             <Button
               type="button"
-              variant="outline"
               className="gap-2"
               aria-label={secretCopied ? "Copied to clipboard" : "Copy API key"}
               onClick={() => void copySecret()}
@@ -477,9 +509,6 @@ export default function EnvironmentsClient({
                   Copy
                 </>
               )}
-            </Button>
-            <Button type="button" onClick={() => setSecretDialog(null)}>
-              Done
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -534,15 +563,23 @@ export default function EnvironmentsClient({
                           {env.slug}
                         </code>
                         {env.keyHint ? (
-                          <div className="mt-3 md:hidden">
-                            <KeyHintChip hint={env.keyHint} />
-                          </div>
+                          <code
+                            className={cn(
+                              keyHintClassName,
+                              "mt-1.5 text-[0.7rem] text-muted-foreground/90 md:hidden",
+                            )}
+                            title={env.keyHint}
+                          >
+                            {env.keyHint}
+                          </code>
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden whitespace-normal md:table-cell md:align-top">
+                    <TableCell className="hidden max-w-[min(100%,18rem)] whitespace-normal md:table-cell md:align-top">
                       {env.keyHint ? (
-                        <KeyHintChip hint={env.keyHint} />
+                        <code className={cn(keyHintClassName, "py-1")} title={env.keyHint}>
+                          {env.keyHint}
+                        </code>
                       ) : (
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
