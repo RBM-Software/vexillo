@@ -6,25 +6,17 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-
-type EnvironmentRef = { id: string; name: string; slug: string };
 
 export default function FlagDetailClient({
   flagKey,
   initialFlag,
-  initialEnvironments,
+  initialRollout,
   isAdmin,
 }: {
   flagKey: string;
@@ -33,24 +25,19 @@ export default function FlagDetailClient({
     name: string;
     key: string;
     description: string;
-    createdAt: string;
-    states: Record<string, boolean>;
   };
-  initialEnvironments: EnvironmentRef[];
+  initialRollout: { name: string; slug: string; enabled: boolean }[];
   isAdmin: boolean;
 }) {
   const router = useRouter();
   const [name, setName] = React.useState(initialFlag.name);
   const [description, setDescription] = React.useState(initialFlag.description);
-  const [states, setStates] = React.useState(initialFlag.states);
   const [savingMeta, setSavingMeta] = React.useState(false);
-  const [toggleBusy, setToggleBusy] = React.useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
 
   React.useEffect(() => {
     setName(initialFlag.name);
     setDescription(initialFlag.description);
-    setStates(initialFlag.states);
   }, [initialFlag]);
 
   async function saveMeta() {
@@ -73,25 +60,6 @@ export default function FlagDetailClient({
       router.refresh();
     } finally {
       setSavingMeta(false);
-    }
-  }
-
-  async function toggleEnv(environmentId: string) {
-    setToggleBusy(environmentId);
-    try {
-      const res = await fetch(`/api/flags/${encodeURIComponent(flagKey)}/toggle`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ environmentId }),
-      });
-      if (!res.ok) return;
-      const { enabled } = (await res.json()) as { enabled: boolean };
-      const env = initialEnvironments.find((e) => e.id === environmentId);
-      if (env) {
-        setStates((s) => ({ ...s, [env.slug]: enabled }));
-      }
-    } finally {
-      setToggleBusy(null);
     }
   }
 
@@ -123,25 +91,22 @@ export default function FlagDetailClient({
         </Link>
       </div>
 
-      <header className="page-enter page-enter-delay-1 mb-8">
-        <h1 className="page-title">{name}</h1>
-        <code className="mt-2 block font-mono text-sm text-muted-foreground">{initialFlag.key}</code>
-      </header>
-
       {isAdmin ? (
-        <Card className="surface-card page-enter page-enter-delay-2 mb-8">
-          <CardHeader className="border-b border-border pb-4">
-            <CardTitle className="font-heading text-base font-medium">Details</CardTitle>
-            <CardDescription>The flag key cannot be changed after creation.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5 pt-6">
+        <Card className="surface-card page-enter page-enter-delay-1 mb-8">
+          <CardContent className="space-y-6 pt-6">
             <div className="space-y-2">
               <Label htmlFor="detail-name">Name</Label>
               <Input
                 id="detail-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                className="h-auto py-2 font-heading text-[1.625rem] font-normal tracking-[-0.02em] md:text-[1.875rem]"
               />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Key</Label>
+              <code className="block font-mono text-sm text-foreground">{initialFlag.key}</code>
+              <p className="text-xs text-muted-foreground">The key cannot be changed.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="detail-desc">Description</Label>
@@ -152,76 +117,80 @@ export default function FlagDetailClient({
                 rows={3}
               />
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              disabled={savingMeta}
+              onClick={() => void saveMeta()}
+            >
+              {savingMeta ? "Saving…" : "Save changes"}
+            </Button>
+
+            <div className="border-t border-border pt-6">
+              <h2 className="text-sm font-medium text-destructive">Delete flag</h2>
               <Button
                 type="button"
-                disabled={savingMeta}
-                onClick={() => void saveMeta()}
+                variant="destructive"
+                className="mt-4 gap-2"
+                disabled={deleteBusy}
+                onClick={() => void handleDelete()}
               >
-                {savingMeta ? "Saving…" : "Save changes"}
+                <Trash2 className="size-4" aria-hidden />
+                Delete flag
               </Button>
             </div>
           </CardContent>
         </Card>
       ) : (
-        <div className="surface-card page-enter page-enter-delay-2 mb-8 px-6 py-5">
-          <p className="text-sm text-muted-foreground">{initialFlag.description || "No description."}</p>
-        </div>
+        <>
+          <header className="page-enter page-enter-delay-1 mb-8">
+            <h1 className="page-title">{initialFlag.name}</h1>
+            <code className="mt-2 block font-mono text-sm text-muted-foreground">{initialFlag.key}</code>
+          </header>
+          <div className="surface-card page-enter page-enter-delay-2 mb-8 px-6 py-5">
+            <p className="text-sm text-muted-foreground">{initialFlag.description || "No description."}</p>
+          </div>
+        </>
       )}
 
-      <section className="page-enter page-enter-delay-3">
-        <h2 className="font-heading text-base font-medium text-foreground">Environments</h2>
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">On or off for each environment.</p>
-        <ul className="mt-5 grid gap-3 sm:grid-cols-2">
-          {initialEnvironments.map((env) => {
-            const on = states[env.slug] ?? false;
-            const busy = toggleBusy === env.id;
-            return (
-              <li key={env.id}>
-                <Card className="h-full shadow-none">
-                  <CardContent className="flex items-center justify-between gap-4 px-5 py-5">
-                    <div className="min-w-0">
-                      <p className="font-medium">{env.name}</p>
-                      <p className="mt-1 font-mono text-xs text-muted-foreground">{env.slug}</p>
-                    </div>
-                    {isAdmin ? (
-                      <Switch
-                        checked={on}
-                        disabled={busy}
-                        onCheckedChange={() => void toggleEnv(env.id)}
-                        aria-label={`Enable ${initialFlag.name} in ${env.name}`}
-                      />
-                    ) : (
-                      <span className="font-mono text-xs font-medium tabular-nums text-muted-foreground">
-                        {on ? "ON" : "OFF"}
-                      </span>
-                    )}
-                  </CardContent>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
-      {isAdmin ? (
-        <div className="page-enter page-enter-delay-4 mt-12 border-t border-border pt-8">
-          <h2 className="text-sm font-medium text-destructive">Delete flag</h2>
-          <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            Removes this flag and its settings in every environment.
+      <section className="page-enter page-enter-delay-2 mt-2">
+        <h2 className="font-heading text-base font-medium text-foreground">Rollout</h2>
+        {initialRollout.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            No environments yet.
+            {isAdmin ? (
+              <>
+                {" "}
+                <Link
+                  href="/environments"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  Add one
+                </Link>
+              </>
+            ) : null}
           </p>
-          <Button
-            type="button"
-            variant="destructive"
-            className="mt-4 gap-2"
-            disabled={deleteBusy}
-            onClick={() => void handleDelete()}
-          >
-            <Trash2 className="size-4" aria-hidden />
-            Delete flag
-          </Button>
-        </div>
-      ) : null}
+        ) : (
+          <div className="surface-card mt-4 divide-y divide-border overflow-hidden">
+            {initialRollout.map((env) => (
+              <div
+                key={env.slug}
+                className="flex items-center justify-between gap-4 px-5 py-4"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium">{env.name}</p>
+                  <p className="mt-0.5 font-mono text-xs text-muted-foreground">{env.slug}</p>
+                </div>
+                <Badge
+                  variant={env.enabled ? "default" : "secondary"}
+                  className="shrink-0 rounded-lg px-2.5 font-mono text-[0.65rem] tracking-wide"
+                >
+                  {env.enabled ? "ON" : "OFF"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

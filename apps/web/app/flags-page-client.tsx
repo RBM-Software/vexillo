@@ -215,11 +215,26 @@ export default function FlagsPageClient({
           </AlertDescription>
         </Alert>
       ) : filtered.length === 0 ? (
-        <Alert className="page-enter page-enter-delay-2 max-w-lg [&>svg]:text-muted-foreground">
-          <Info aria-hidden />
-          <AlertTitle>No matches</AlertTitle>
-          <AlertDescription>Try another search term.</AlertDescription>
-        </Alert>
+        query.trim() ? (
+          <Alert className="page-enter page-enter-delay-2 max-w-lg [&>svg]:text-muted-foreground">
+            <Info aria-hidden />
+            <AlertTitle>No matches</AlertTitle>
+            <AlertDescription>Try another search term.</AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="page-enter page-enter-delay-2 max-w-lg [&>svg]:text-muted-foreground">
+            <Info aria-hidden />
+            <AlertTitle>No flags yet</AlertTitle>
+            <AlertDescription className="mt-2 block space-y-4">
+              <span className="block">Create a flag to see it here.</span>
+              {isAdmin ? (
+                <Button className="w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
+                  New flag
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        )
       ) : (
         <div className="surface-card page-enter page-enter-delay-2 overflow-hidden">
           {/* border-separate: sticky column backgrounds fail with default border-collapse: collapse */}

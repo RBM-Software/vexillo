@@ -72,57 +72,80 @@ export async function getDashboardFlagsAndEnvironments() {
   };
 }
 
+export type DashboardFlagRolloutRow = {
+  name: string;
+  slug: string;
+  enabled: boolean;
+};
+
 export async function getDashboardFlagByKey(key: string) {
-  const [rows, envRows] = await Promise.all([
-    db
-      .select({
-        id: flags.id,
-        name: flags.name,
-        key: flags.key,
-        description: flags.description,
-        createdAt: flags.createdAt,
-        envSlug: environments.slug,
-        enabled: sql<boolean>`COALESCE(${flagStates.enabled}, false)`,
-      })
-      .from(flags)
-      .crossJoin(environments)
-      .leftJoin(
-        flagStates,
-        and(
-          eq(flagStates.flagId, flags.id),
-          eq(flagStates.environmentId, environments.id),
-        ),
-      )
-      .where(eq(flags.key, key))
-      .orderBy(asc(environments.name)),
+  const rows = await db
+    .select({
+      id: flags.id,
+      name: flags.name,
+      key: flags.key,
+      description: flags.description,
+      createdAt: flags.createdAt,
+      envSlug: environments.slug,
+      envName: environments.name,
+      enabled: sql<boolean>`COALESCE(${flagStates.enabled}, false)`,
+    })
+    .from(flags)
+    .crossJoin(environments)
+    .leftJoin(
+      flagStates,
+      and(
+        eq(flagStates.flagId, flags.id),
+        eq(flagStates.environmentId, environments.id),
+      ),
+    )
+    .where(eq(flags.key, key))
+    .orderBy(asc(environments.name));
 
-    db
-      .select({
-        id: environments.id,
-        name: environments.name,
-        slug: environments.slug,
-      })
-      .from(environments)
-      .orderBy(asc(environments.name)),
-  ]);
-
-  if (rows.length === 0) return null;
-
-  const first = rows[0];
-  const states: Record<string, boolean> = {};
-  for (const row of rows) {
-    states[row.envSlug] = row.enabled;
+  if (rows.length > 0) {
+    const first = rows[0];
+    const states: Record<string, boolean> = {};
+    const rollout: DashboardFlagRolloutRow[] = [];
+    for (const row of rows) {
+      states[row.envSlug] = row.enabled;
+      rollout.push({
+        name: row.envName,
+        slug: row.envSlug,
+        enabled: row.enabled,
+      });
+    }
+    return {
+      flag: {
+        id: first.id,
+        name: first.name,
+        key: first.key,
+        description: first.description,
+        createdAt: first.createdAt,
+        states,
+      },
+      rollout,
+    };
   }
+
+  const [flagOnly] = await db
+    .select({
+      id: flags.id,
+      name: flags.name,
+      key: flags.key,
+      description: flags.description,
+      createdAt: flags.createdAt,
+    })
+    .from(flags)
+    .where(eq(flags.key, key))
+    .limit(1);
+
+  if (!flagOnly) return null;
 
   return {
     flag: {
-      id: first.id,
-      name: first.name,
-      key: first.key,
-      description: first.description,
-      createdAt: first.createdAt,
-      states,
+      ...flagOnly,
+      states: {} as Record<string, boolean>,
     },
-    environments: envRows as DashboardEnvironmentRef[],
+    rollout: [] as DashboardFlagRolloutRow[],
   };
 }

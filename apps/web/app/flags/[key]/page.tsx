@@ -20,15 +20,17 @@ export default async function FlagDetailPage({
   }
 
   const initialFlag = {
-    ...data.flag,
-    createdAt: data.flag.createdAt.toISOString(),
+    id: data.flag.id,
+    name: data.flag.name,
+    key: data.flag.key,
+    description: data.flag.description,
   };
 
   return (
     <FlagDetailClient
       flagKey={key}
       initialFlag={initialFlag}
-      initialEnvironments={data.environments}
+      initialRollout={data.rollout}
       isAdmin={session.user.role === 'admin'}
     />
   );
