@@ -258,14 +258,6 @@ export default function EnvironmentsClient({
   const originPersistTimersRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const originPendingRef = React.useRef<Record<string, string[]>>({});
 
-  const tableScrollRef = React.useRef<HTMLDivElement>(null);
-  const [stickyEdgeShadow, setStickyEdgeShadow] = React.useState(false);
-
-  const syncStickyEdgeShadow = React.useCallback(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    setStickyEdgeShadow(el.scrollLeft > 1);
-  }, []);
 
   React.useEffect(
     () => () => {
@@ -282,22 +274,6 @@ export default function EnvironmentsClient({
       Object.fromEntries(initialEnvironments.map((e) => [e.id, [...e.allowedOrigins]])),
     );
   }, [initialEnvironments]);
-
-  React.useLayoutEffect(() => {
-    syncStickyEdgeShadow();
-  }, [syncStickyEdgeShadow, environments.length, isAdmin]);
-
-  React.useEffect(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => syncStickyEdgeShadow());
-    ro.observe(el);
-    el.addEventListener("scroll", syncStickyEdgeShadow, { passive: true });
-    return () => {
-      ro.disconnect();
-      el.removeEventListener("scroll", syncStickyEdgeShadow);
-    };
-  }, [syncStickyEdgeShadow, environments.length]);
 
   function originRowsFor(id: string, fallback: string[]) {
     if (originDrafts[id] !== undefined) return originDrafts[id];
@@ -473,7 +449,7 @@ export default function EnvironmentsClient({
                       value={newEnvName}
                       onChange={(e) => setNewEnvName(e.target.value)}
                       placeholder="e.g. Production"
-                      className="rounded-lg shadow-xs"
+                      className="rounded-lg"
                       required
                     />
                   </div>
@@ -505,7 +481,7 @@ export default function EnvironmentsClient({
             <Label htmlFor="env-api-key-secret" className="sr-only">
               API key
             </Label>
-            <div className="rounded-lg border border-border bg-muted/40 px-2.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:bg-muted/25 dark:shadow-none">
+            <div className="rounded-lg border border-border bg-muted/40 px-2.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] dark:bg-muted/25 dark:shadow-none">
               <Input
                 ref={secretFieldRef}
                 id="env-api-key-secret"
@@ -557,22 +533,17 @@ export default function EnvironmentsClient({
         </Alert>
       ) : (
         <div className="table-shell page-enter page-enter-delay-2">
-          <Table ref={tableScrollRef} className="data-table data-table-comfy">
+          <Table className="data-table data-table-comfy">
             <TableHeader>
               <TableRow className="data-table-head-row">
-                <TableHead
-                  className={cn(
-                    "data-table-th data-table-sticky-flag sticky left-0 z-30 min-w-[200px] border-r border-border ps-5 transition-shadow duration-200 ease-out",
-                    stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
-                  )}
-                >
+                <TableHead className="data-table-th ps-5">
                   Environment
                 </TableHead>
                 <TableHead className="data-table-th hidden min-w-36 md:table-cell">
-                  Key preview
+                  API key
                 </TableHead>
                 <TableHead className="data-table-th min-w-0">
-                  Allowed origins (CORS)
+                  Allowed origins
                 </TableHead>
                 {isAdmin ? (
                   <TableHead className="data-table-th w-[1%] whitespace-nowrap pe-5 text-end">
@@ -586,12 +557,7 @@ export default function EnvironmentsClient({
                 const originRows = originRowsFor(env.id, env.allowedOrigins);
                 return (
                   <TableRow key={env.id} className="group/env data-table-body-row">
-                    <TableCell
-                      className={cn(
-                        "data-table-sticky-flag sticky left-0 z-20 min-w-0 border-r border-border align-top transition-[box-shadow,background-color] duration-200 ease-out group-hover/env:bg-muted/50 ps-5",
-                        stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
-                      )}
-                    >
+                    <TableCell className="align-top ps-5">
                       <div className="min-w-0 py-0.5">
                         <div
                           className="data-table-cell-stack"

@@ -187,7 +187,7 @@ export default function FlagDetailClient({
         isAdmin ? "page-enter-delay-1" : "page-enter-delay-2",
       )}
     >
-      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 border-b border-border bg-muted/20 px-5 py-3 sm:px-6 dark:bg-muted/10">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 border-b border-border bg-muted/25 px-5 py-3 dark:bg-muted/12">
         <h2 className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-foreground">Rollout</h2>
         {envTotal > 0 ? (
           <p className="text-sm tabular-nums text-muted-foreground">
@@ -210,9 +210,9 @@ export default function FlagDetailClient({
         <Table className="data-table data-table-comfy">
           <TableHeader>
             <TableRow className="data-table-head-row">
-              <TableHead className="data-table-th">Environment</TableHead>
-              <TableHead scope="col" className="data-table-th text-end font-normal">
-                <span className="sr-only">Toggle flag in environment</span>
+              <TableHead className="data-table-th ps-5">Environment</TableHead>
+              <TableHead scope="col" className="data-table-th pe-5 text-end">
+                Enabled
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -224,13 +224,13 @@ export default function FlagDetailClient({
 
               return (
                 <TableRow key={row.id} className="group/flag data-table-body-row">
-                  <TableCell className="max-w-md whitespace-normal">
+                  <TableCell className="max-w-md whitespace-normal ps-5">
                     <div className="data-table-cell-stack py-0.5">
                       <div className="data-table-primary-label">{row.name}</div>
                       <code className="data-table-mono-meta">{row.slug}</code>
                     </div>
                   </TableCell>
-                  <TableCell className="text-end">
+                  <TableCell className="pe-5 text-end">
                     <div className="flex items-center justify-end gap-2">
                       {isAdmin && busy ? (
                         <Loader2
@@ -345,7 +345,7 @@ export default function FlagDetailClient({
                   aria-label="Flag key (read-only)"
                   className={cn(
                     "min-w-0 self-start rounded-lg border border-input/70 bg-muted/30 px-3 py-2 sm:col-start-2 sm:row-start-2 dark:border-white/10 dark:bg-[rgb(255_255_255/0.05)]",
-                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.06)]",
+                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] dark:shadow-none",
                   )}
                   title={initialFlag.key}
                 >

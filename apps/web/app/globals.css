@@ -91,7 +91,6 @@
   /* Compact floats: tooltips, switch thumb — same family, tighter blur */
   --surface-shadow-xs:
     0 1px 2px -0.5px rgb(0 0 0 / 0.09), 0 2px 6px -3px rgb(0 0 0 / 0.08);
-  --surface-shadow-sticky: 4px 0 14px -6px rgb(0 0 0 / 0.12);
 }
 
 .dark {
@@ -133,7 +132,6 @@
     0 1px 2px -0.5px rgb(0 0 0 / 0.5), 0 4px 16px -6px rgb(0 0 0 / 0.45);
   --surface-shadow-xs:
     0 1px 2px -0.5px rgb(0 0 0 / 0.55), 0 2px 8px -4px rgb(0 0 0 / 0.45);
-  --surface-shadow-sticky: 4px 0 14px -6px rgb(0 0 0 / 0.55);
 }
 
 @layer base {
@@ -211,36 +209,33 @@
    */
   .table-shell {
     @apply overflow-hidden rounded-xl border border-border bg-background;
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-  }
-
-  .dark .table-shell {
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.22);
+    box-shadow: var(--surface-shadow);
   }
 
   .data-table {
     @apply w-full border-collapse text-sm;
   }
 
-  /* Tailwind UI “Users”-style: breathable rows, calm header */
+  /* Breathable rows with a tighter header */
   .data-table-comfy thead th {
-    @apply py-4;
+    @apply py-3;
   }
 
   .data-table-comfy tbody td {
-    @apply py-5;
+    @apply py-4;
   }
 
   .data-table-head-row {
-    @apply border-b border-border bg-muted/35 dark:bg-muted/15;
+    @apply border-b border-border bg-muted/50 dark:bg-muted/20;
   }
 
+  /* Uppercase column labels — clear hierarchy without heavy weight */
   .data-table-th {
-    @apply text-xs font-semibold tracking-normal text-foreground;
+    @apply text-[0.6875rem] font-medium uppercase tracking-[0.07em] text-muted-foreground;
   }
 
   .data-table-body-row {
-    @apply transition-[background-color] duration-150 ease-out hover:bg-muted/30 dark:hover:bg-muted/15;
+    @apply transition-[background-color] duration-150 ease-out hover:bg-muted/50 dark:hover:bg-muted/25;
   }
 
   /* Name + secondary line (email / key / slug) */

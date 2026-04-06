@@ -65,18 +65,8 @@ export default function FlagsPageClient({
     pickDefaultPrimaryEnvId(initialEnvironments),
   );
 
-  const tableScrollRef = React.useRef<HTMLDivElement>(null);
-  /** Drop-shadow on sticky column only while scrolled — signals overlap, not default chrome. */
-  const [stickyEdgeShadow, setStickyEdgeShadow] = React.useState(false);
-
   const primaryEnv =
     initialEnvironments.find((e) => e.id === primaryEnvId) ?? initialEnvironments[0] ?? null;
-
-  const syncStickyEdgeShadow = React.useCallback(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    setStickyEdgeShadow(el.scrollLeft > 1);
-  }, []);
 
   React.useEffect(() => {
     setFlags(initialFlags);
@@ -120,22 +110,6 @@ export default function FlagsPageClient({
         f.description.toLowerCase().includes(q),
     );
   }, [flags, query]);
-
-  React.useLayoutEffect(() => {
-    syncStickyEdgeShadow();
-  }, [syncStickyEdgeShadow, filtered.length, initialEnvironments.length, primaryEnv?.id]);
-
-  React.useEffect(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => syncStickyEdgeShadow());
-    ro.observe(el);
-    el.addEventListener("scroll", syncStickyEdgeShadow, { passive: true });
-    return () => {
-      ro.disconnect();
-      el.removeEventListener("scroll", syncStickyEdgeShadow);
-    };
-  }, [syncStickyEdgeShadow]);
 
   async function handleCreate(data: {
     name: string;
@@ -213,7 +187,7 @@ export default function FlagsPageClient({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search flags…"
-              className="h-9 rounded-lg ps-10 shadow-xs"
+              className="h-9 rounded-lg ps-10"
               aria-label="Filter by name, key, or description"
             />
           </div>
@@ -226,7 +200,7 @@ export default function FlagsPageClient({
             <select
               id="primary-env"
               className={cn(
-                "h-9 w-full cursor-pointer rounded-lg border border-input bg-background px-3 text-sm shadow-xs",
+                "h-9 w-full cursor-pointer rounded-lg border border-input bg-background px-3 text-sm",
                 "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               )}
               value={primaryEnv?.id ?? ""}
@@ -298,22 +272,17 @@ export default function FlagsPageClient({
           )}
           aria-busy={isListPending}
         >
-          <Table ref={tableScrollRef} className="data-table data-table-comfy">
+          <Table className="data-table data-table-comfy">
             <TableHeader>
               <TableRow className="data-table-head-row">
-                <TableHead
-                  className={cn(
-                    "data-table-th data-table-sticky-flag sticky left-0 z-30 min-w-[220px] border-r border-border ps-5 transition-shadow duration-200 ease-out",
-                    stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
-                  )}
-                >
+                <TableHead className="data-table-th ps-5">
                   Flag
                 </TableHead>
                 <TableHead
                   scope="col"
-                  className="data-table-th w-[1%] whitespace-normal text-center font-normal"
+                  className="data-table-th w-[1%] whitespace-nowrap text-center"
                 >
-                  <span className="sr-only">Enabled in {primaryEnv.name}</span>
+                  Status
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -328,12 +297,7 @@ export default function FlagsPageClient({
 
                 return (
                   <TableRow key={flag.key} className="group/flag data-table-body-row">
-                    <TableCell
-                      className={cn(
-                        "data-table-sticky-flag sticky left-0 z-20 min-w-0 border-r border-border align-top transition-[box-shadow,background-color] duration-200 ease-out group-hover/flag:bg-muted/50 ps-5",
-                        stickyEdgeShadow && "shadow-[var(--surface-shadow-sticky)]",
-                      )}
-                    >
+                    <TableCell className="align-top ps-5">
                       <Link
                         href={`/flags/${encodeURIComponent(flag.key)}`}
                         className="group/link block min-w-0 py-0.5"
