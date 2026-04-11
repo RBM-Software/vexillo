@@ -3,6 +3,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { createDbClient } from '@vexillo/db';
 import { createSdkRouter } from './routes/sdk';
 import { createDashboardRouter } from './routes/dashboard';
+import { createSuperAdminRouter } from './routes/superadmin';
 import { createAuth } from './lib/auth';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -52,6 +53,12 @@ app.route('/api/sdk', createSdkRouter(db));
 app.route(
   '/api/dashboard',
   createDashboardRouter(db, (headers) => auth.api.getSession({ headers })),
+);
+
+// Super-admin routes — isSuperAdmin required
+app.route(
+  '/api/superadmin',
+  createSuperAdminRouter(db, (headers) => auth.api.getSession({ headers })),
 );
 
 const port = Number(process.env.PORT ?? 3000);

@@ -7,6 +7,10 @@ import { FlagsPage } from './routes/_auth/index'
 import { FlagDetailPage } from './routes/_auth/flags.$key'
 import { EnvironmentsPage } from './routes/_auth/environments'
 import { MembersPage } from './routes/_auth/members'
+import { AdminLayout } from './routes/admin'
+import { AdminOrgsPage } from './routes/admin/index'
+import { AdminOrgsNewPage } from './routes/admin/orgs.new'
+import { AdminOrgDetailPage } from './routes/admin/orgs.$slug'
 import { authClient } from '@/lib/auth-client'
 import type { OrgInfo } from '@/lib/org-context'
 
@@ -15,7 +19,7 @@ const rootRoute = createRootRoute({
   component: RootLayout,
 })
 
-// Public: /sign-in — platform sign-in for super-admins and legacy redirect
+// Public: /sign-in — platform sign-in for super-admins and org members
 const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sign-in',
@@ -23,9 +27,16 @@ const signInRoute = createRoute({
 })
 
 // Public: / — "find your workspace" slug entry form
+// Redirects super-admins straight to /admin
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  beforeLoad: async () => {
+    const { data: session } = await authClient.getSession()
+    if ((session?.user as Record<string, unknown>)?.isSuperAdmin === true) {
+      throw redirect({ to: '/admin' })
+    }
+  },
   component: WorkspacePage,
 })
 
@@ -79,8 +90,46 @@ const membersRoute = createRoute({
   component: MembersPage,
 })
 
+// Admin layout: /admin — super-admin guard
+const adminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/admin',
+  beforeLoad: async ({ location }) => {
+    const { data: session } = await authClient.getSession()
+    if (!session) {
+      throw redirect({ to: '/sign-in', search: { next: location.href } })
+    }
+    if ((session.user as Record<string, unknown>).isSuperAdmin !== true) {
+      throw redirect({ to: '/' })
+    }
+  },
+  component: AdminLayout,
+})
+
+// /admin (index) — org list
+const adminIndexRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/',
+  component: AdminOrgsPage,
+})
+
+// /admin/orgs/new — create org
+const adminOrgsNewRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/orgs/new',
+  component: AdminOrgsNewPage,
+})
+
+// /admin/orgs/$slug — org detail
+const adminOrgDetailRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/orgs/$slug',
+  component: AdminOrgDetailPage,
+})
+
 export const routeTree = rootRoute.addChildren([
   signInRoute,
   indexRoute,
   orgRoute.addChildren([flagsRoute, flagDetailRoute, environmentsRoute, membersRoute]),
+  adminRoute.addChildren([adminIndexRoute, adminOrgsNewRoute, adminOrgDetailRoute]),
 ])
