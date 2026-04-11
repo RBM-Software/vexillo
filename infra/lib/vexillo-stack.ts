@@ -86,7 +86,7 @@ export class VexilloStack extends cdk.Stack {
       multiAz: false,
       storageEncrypted: true,
       deletionProtection: false,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
       backupRetention: cdk.Duration.days(7),
     });
 
@@ -167,7 +167,7 @@ export class VexilloStack extends cdk.Stack {
 
     // ALB target group health check
     apiService.targetGroup.configureHealthCheck({
-      path: '/',
+      path: '/health',
       healthyHttpCodes: '200-399',
       interval: cdk.Duration.seconds(15),
       timeout: cdk.Duration.seconds(5),
