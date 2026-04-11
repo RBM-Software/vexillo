@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, and, asc, sql } from 'drizzle-orm';
-import { apiKeys, environments, flags, flagStates } from '@vexillo/db';
+import { apiKeys, environments, organizations, flags, flagStates } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import { hashKey } from '../lib/api-key';
 
@@ -64,12 +64,21 @@ export function createSdkRouter(db: DbClient) {
     }
 
     const [env] = await db
-      .select({ id: environments.id, allowedOrigins: environments.allowedOrigins })
+      .select({
+        id: environments.id,
+        allowedOrigins: environments.allowedOrigins,
+        orgStatus: organizations.status,
+      })
       .from(environments)
+      .innerJoin(organizations, eq(organizations.id, environments.orgId))
       .where(eq(environments.id, apiKey.environmentId))
       .limit(1);
 
     if (!env) {
+      return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
+    }
+
+    if (env.orgStatus === 'suspended') {
       return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
     }
 

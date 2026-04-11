@@ -12,6 +12,7 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
     where: () => base,
     limit: () => Promise.resolve([]),
     leftJoin: () => base,
+    innerJoin: () => base,
     orderBy: () => Promise.resolve([]),
   };
   return { ...base, ...overrides } as unknown as Parameters<typeof createSdkRouter>[0];
@@ -33,7 +34,7 @@ function makeSdkQueueDb(results: unknown[][]) {
   chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
     Promise.resolve(consume()).then(resolve, reject);
 
-  for (const m of ['select', 'from', 'where', 'leftJoin']) {
+  for (const m of ['select', 'from', 'where', 'leftJoin', 'innerJoin']) {
     chain[m] = () => chain;
   }
 
@@ -112,7 +113,22 @@ describe('GET /api/sdk/flags', () => {
     // Queue: apiKey lookup returns a match, environment lookup returns empty.
     const db = makeSdkQueueDb([
       [{ environmentId: 'env-1' }], // apiKeys query
-      [],                            // environments query → 403
+      [],                            // environments+org query → 403
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: { Authorization: 'Bearer sdk-validkey' },
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
+  it('returns 403 when the organization is suspended', async () => {
+    const db = makeSdkQueueDb([
+      [{ environmentId: 'env-1' }],                                          // apiKeys query
+      [{ id: 'env-1', allowedOrigins: [], orgStatus: 'suspended' }],        // environments+org query
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
