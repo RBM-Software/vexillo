@@ -124,8 +124,8 @@ describe('GET /api/sdk/flags', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
   });
 
-  it('returns 200 with flag states, CORS *, and Cache-Control on a valid key', async () => {
-    // Queue: apiKey → environment → flag states.
+  it('returns 200 with flag states, CORS *, and Cache-Control on a valid key (no Origin header)', async () => {
+    // No Origin header → server/script request → always allowed, CORS * returned.
     const db = makeSdkQueueDb([
       [{ environmentId: 'env-1' }],                                    // apiKeys
       [{ id: 'env-1', allowedOrigins: [] }],                           // environments
@@ -162,6 +162,80 @@ describe('GET /api/sdk/flags', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as { flags: unknown[] };
     expect(body.flags).toEqual([]);
+  });
+
+  // ── CORS allowlist enforcement ──────────────────────────────────────────────
+
+  it('returns 403 when Origin is present but allowedOrigins is empty', async () => {
+    const db = makeSdkQueueDb([
+      [{ environmentId: 'env-1' }],
+      [{ id: 'env-1', allowedOrigins: [] }],
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: {
+          Authorization: 'Bearer sdk-validkey',
+          Origin: 'https://example.com',
+        },
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 when Origin is not in the allowedOrigins list', async () => {
+    const db = makeSdkQueueDb([
+      [{ environmentId: 'env-1' }],
+      [{ id: 'env-1', allowedOrigins: ['https://allowed.com'] }],
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: {
+          Authorization: 'Bearer sdk-validkey',
+          Origin: 'https://notallowed.com',
+        },
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('reflects the matching origin back when it is in allowedOrigins', async () => {
+    const db = makeSdkQueueDb([
+      [{ environmentId: 'env-1' }],
+      [{ id: 'env-1', allowedOrigins: ['https://myapp.com'] }],
+      [],
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: {
+          Authorization: 'Bearer sdk-validkey',
+          Origin: 'https://myapp.com',
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://myapp.com');
+  });
+
+  it('returns * when allowedOrigins contains the wildcard and Origin is present', async () => {
+    const db = makeSdkQueueDb([
+      [{ environmentId: 'env-1' }],
+      [{ id: 'env-1', allowedOrigins: ['*'] }],
+      [],
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: {
+          Authorization: 'Bearer sdk-validkey',
+          Origin: 'https://anyone.com',
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
   });
 });
 
