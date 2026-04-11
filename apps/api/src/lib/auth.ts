@@ -22,11 +22,14 @@ export function createAuth(db: DbClient) {
     plugins: [
       genericOAuth({
         config: [
-          okta({
-            clientId: process.env.OKTA_CLIENT_ID!,
-            clientSecret: process.env.OKTA_CLIENT_SECRET!,
-            issuer: process.env.OKTA_ISSUER!,
-          }),
+          {
+            ...okta({
+              clientId: process.env.OKTA_CLIENT_ID!,
+              clientSecret: process.env.OKTA_CLIENT_SECRET!,
+              issuer: process.env.OKTA_ISSUER!,
+            }),
+            responseMode: 'query', // force GET redirect — prevents Okta form_post 501
+          },
         ],
       }),
     ],
