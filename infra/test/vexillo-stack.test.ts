@@ -160,6 +160,41 @@ describe('CloudFront', () => {
       },
     });
   });
+
+  it('creates a response headers policy with CSP, HSTS, and framing controls', () => {
+    template.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
+      ResponseHeadersPolicyConfig: {
+        Name: 'vexillo-spa-security-headers',
+        SecurityHeadersConfig: {
+          ContentTypeOptions: { Override: true },
+          FrameOptions: { FrameOption: 'DENY', Override: true },
+          ReferrerPolicy: {
+            ReferrerPolicy: 'strict-origin-when-cross-origin',
+            Override: true,
+          },
+          StrictTransportSecurity: {
+            AccessControlMaxAgeSec: 365 * 24 * 60 * 60,
+            IncludeSubdomains: true,
+            Override: true,
+          },
+          ContentSecurityPolicy: {
+            ContentSecurityPolicy: Match.stringLikeRegexp("default-src 'self'"),
+            Override: true,
+          },
+        },
+      },
+    });
+  });
+
+  it('attaches the response headers policy to the default (SPA) behavior', () => {
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: {
+        DefaultCacheBehavior: {
+          ResponseHeadersPolicyId: Match.objectLike({ Ref: Match.anyValue() }),
+        },
+      },
+    });
+  });
 });
 
 describe('SSM Parameters', () => {
