@@ -1,10 +1,22 @@
-import { Suspense } from "react";
-import { Flag } from "lucide-react";
-import { ModeToggle } from "@/components/mode-toggle";
-import { Button } from "@/components/ui/button";
-import { SignInForm } from "./sign-in-form";
+import { Flag } from 'lucide-react'
+import { ModeToggle } from '@/components/mode-toggle'
+import { Button } from '@/components/ui/button'
+import { authClient } from '@/lib/auth-client'
+import { useSearch } from '@tanstack/react-router'
 
-export default function SignInPage() {
+export function SignInPage() {
+  const search = useSearch({ strict: false }) as { next?: string }
+
+  async function handleSignIn() {
+    const callbackURL = search.next
+      ? new URL(search.next, window.location.origin).toString()
+      : window.location.origin + '/'
+    await authClient.signIn.oauth2({
+      providerId: 'okta',
+      callbackURL,
+    })
+  }
+
   return (
     <div className="relative flex min-h-dvh flex-1 flex-col overflow-hidden">
       {/* Subtle dot-grid background */}
@@ -13,12 +25,12 @@ export default function SignInPage() {
         aria-hidden
         style={{
           backgroundImage:
-            "radial-gradient(circle, var(--color-border) 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
+            'radial-gradient(circle, var(--color-border) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
           maskImage:
-            "radial-gradient(ellipse 70% 60% at 50% 45%, black 30%, transparent 100%)",
+            'radial-gradient(ellipse 70% 60% at 50% 45%, black 30%, transparent 100%)',
           WebkitMaskImage:
-            "radial-gradient(ellipse 70% 60% at 50% 45%, black 30%, transparent 100%)",
+            'radial-gradient(ellipse 70% 60% at 50% 45%, black 30%, transparent 100%)',
           opacity: 0.6,
         }}
       />
@@ -47,15 +59,9 @@ export default function SignInPage() {
           </div>
 
           <div className="page-enter page-enter-delay-1">
-            <Suspense
-              fallback={
-                <Button type="button" className="h-10 w-full" disabled aria-busy>
-                  Signing in…
-                </Button>
-              }
-            >
-              <SignInForm />
-            </Suspense>
+            <Button type="button" className="h-10 w-full" onClick={handleSignIn}>
+              Continue with Okta
+            </Button>
           </div>
 
           {/* Footer hint */}
@@ -72,5 +78,5 @@ export default function SignInPage() {
         </p>
       </footer>
     </div>
-  );
+  )
 }
