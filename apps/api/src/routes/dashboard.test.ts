@@ -625,3 +625,118 @@ describe('DELETE /api/dashboard/:orgSlug/members/:userId', () => {
     expect(res.status).toBe(204);
   });
 });
+
+// ── POST /api/dashboard/:orgSlug/invites ────────────────────────────────────
+
+describe('POST /api/dashboard/:orgSlug/invites', () => {
+  const INVITE_STUB = {
+    id: 'inv-1',
+    email: 'bob@example.com',
+    role: 'viewer',
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  };
+
+  it('returns 403 for viewer', async () => {
+    const app = makeApp(viewerDb(), viewerSession);
+    const res = await app.fetch(
+      new Request(`${BASE}/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'bob@example.com', role: 'viewer' }),
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 400 for missing email', async () => {
+    const app = makeApp(adminDb(), adminSession);
+    const res = await app.fetch(
+      new Request(`${BASE}/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: '', role: 'viewer' }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for invalid role', async () => {
+    const app = makeApp(adminDb(), adminSession);
+    const res = await app.fetch(
+      new Request(`${BASE}/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'bob@example.com', role: 'superuser' }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('creates invite and returns 201 with token', async () => {
+    // insert.values.returning → [INVITE_STUB]
+    const app = makeApp(adminDb([INVITE_STUB]), adminSession);
+    const res = await app.fetch(
+      new Request(`${BASE}/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'bob@example.com', role: 'viewer' }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json() as { invite: { token: string; email: string } };
+    expect(body.invite.email).toBe('bob@example.com');
+    // token is a 64-char hex string
+    expect(body.invite.token).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+// ── GET /api/dashboard/:orgSlug/invites ─────────────────────────────────────
+
+describe('GET /api/dashboard/:orgSlug/invites', () => {
+  it('returns 403 for viewer', async () => {
+    const app = makeApp(viewerDb(), viewerSession);
+    const res = await app.fetch(new Request(`${BASE}/invites`));
+    expect(res.status).toBe(403);
+  });
+
+  it('returns pending invites for admin', async () => {
+    const pending = [
+      { id: 'inv-1', email: 'bob@example.com', role: 'viewer', expiresAt: new Date(), createdAt: new Date() },
+    ];
+    const app = makeApp(adminDb(pending), adminSession);
+    const res = await app.fetch(new Request(`${BASE}/invites`));
+    expect(res.status).toBe(200);
+    const body = await res.json() as { invites: unknown[] };
+    expect(body.invites).toHaveLength(1);
+  });
+});
+
+// ── DELETE /api/dashboard/:orgSlug/invites/:id ───────────────────────────────
+
+describe('DELETE /api/dashboard/:orgSlug/invites/:id', () => {
+  it('returns 403 for viewer', async () => {
+    const app = makeApp(viewerDb(), viewerSession);
+    const res = await app.fetch(
+      new Request(`${BASE}/invites/inv-1`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when invite not found', async () => {
+    // delete.returning → [] (nothing deleted)
+    const app = makeApp(adminDb([]), adminSession);
+    const res = await app.fetch(
+      new Request(`${BASE}/invites/inv-gone`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('deletes invite and returns 204', async () => {
+    // delete.returning → [{ id: 'inv-1' }]
+    const app = makeApp(adminDb([{ id: 'inv-1' }]), adminSession);
+    const res = await app.fetch(
+      new Request(`${BASE}/invites/inv-1`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(204);
+  });
+});

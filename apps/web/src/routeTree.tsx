@@ -11,6 +11,7 @@ import { AdminLayout } from './routes/admin'
 import { AdminOrgsPage } from './routes/admin/index'
 import { AdminOrgsNewPage } from './routes/admin/orgs.new'
 import { AdminOrgDetailPage } from './routes/admin/orgs.$slug'
+import { InviteAcceptPage } from './routes/invite'
 import { authClient } from '@/lib/auth-client'
 import type { OrgInfo } from '@/lib/org-context'
 
@@ -24,6 +25,13 @@ const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sign-in',
   component: SignInPage,
+})
+
+// Public: /invite — accept an org invite via token
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/invite',
+  component: InviteAcceptPage,
 })
 
 // Public: / — "find your workspace" slug entry form
@@ -129,6 +137,7 @@ const adminOrgDetailRoute = createRoute({
 
 export const routeTree = rootRoute.addChildren([
   signInRoute,
+  inviteRoute,
   indexRoute,
   orgRoute.addChildren([flagsRoute, flagDetailRoute, environmentsRoute, membersRoute]),
   adminRoute.addChildren([adminIndexRoute, adminOrgsNewRoute, adminOrgDetailRoute]),

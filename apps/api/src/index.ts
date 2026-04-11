@@ -4,6 +4,7 @@ import { createDbClient } from '@vexillo/db';
 import { createSdkRouter } from './routes/sdk';
 import { createDashboardRouter } from './routes/dashboard';
 import { createSuperAdminRouter } from './routes/superadmin';
+import { createInvitesRouter } from './routes/invites';
 import { createAuth } from './lib/auth';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -59,6 +60,12 @@ app.route(
 app.route(
   '/api/superadmin',
   createSuperAdminRouter(db, (headers) => auth.api.getSession({ headers })),
+);
+
+// Invite accept route — public-ish (requires authenticated session, not org membership)
+app.route(
+  '/api/invites',
+  createInvitesRouter(db, (headers) => auth.api.getSession({ headers })),
 );
 
 const port = Number(process.env.PORT ?? 3000);

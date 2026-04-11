@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, asc, desc, sql } from 'drizzle-orm';
+import { eq, and, asc, desc, sql, isNull, gt } from 'drizzle-orm';
 import {
   authUser,
   environments,
@@ -8,9 +8,17 @@ import {
   apiKeys,
   organizations,
   organizationMembers,
+  invites,
 } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import { generateApiKey, hashKey, maskKey } from '../lib/api-key';
+
+// Generate a random invite token (32 hex bytes = 64-char hex string)
+function generateInviteToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 export type Session = {
   user: {
@@ -529,6 +537,96 @@ export function createDashboardRouter(db: DbClient, getSession: GetSession) {
         ),
       );
 
+    return c.body(null, 204);
+  });
+
+  // ── Invites ───────────────────────────────────────────────────────────────────
+
+  // POST /api/dashboard/:orgSlug/invites — create invite (admin only)
+  router.post('/:orgSlug/invites', async (c) => {
+    const org = c.get('org');
+    const session = c.get('session');
+    const userRole = c.get('userRole');
+    if (userRole !== 'admin') return c.json({ error: 'Forbidden' }, 403);
+
+    const body = await c.req.json();
+    const email: string = body.email?.trim();
+    const role: string = body.role;
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return c.json({ error: 'Valid email is required' }, 400);
+    }
+    if (role !== 'admin' && role !== 'viewer') {
+      return c.json({ error: 'Role must be admin or viewer' }, 400);
+    }
+
+    const rawToken = generateInviteToken();
+    const tokenHash = await hashKey(rawToken);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const [invite] = await db
+      .insert(invites)
+      .values({
+        orgId: org.id,
+        invitedByUserId: session.user.id,
+        email,
+        tokenHash,
+        role,
+        expiresAt,
+      })
+      .returning({
+        id: invites.id,
+        email: invites.email,
+        role: invites.role,
+        expiresAt: invites.expiresAt,
+        createdAt: invites.createdAt,
+      });
+
+    return c.json({ invite: { ...invite, token: rawToken } }, 201);
+  });
+
+  // GET /api/dashboard/:orgSlug/invites — list pending invites (admin only)
+  router.get('/:orgSlug/invites', async (c) => {
+    const org = c.get('org');
+    const userRole = c.get('userRole');
+    if (userRole !== 'admin') return c.json({ error: 'Forbidden' }, 403);
+
+    const now = new Date();
+    const pending = await db
+      .select({
+        id: invites.id,
+        email: invites.email,
+        role: invites.role,
+        expiresAt: invites.expiresAt,
+        createdAt: invites.createdAt,
+      })
+      .from(invites)
+      .where(
+        and(
+          eq(invites.orgId, org.id),
+          isNull(invites.acceptedAt),
+          gt(invites.expiresAt, now),
+        ),
+      )
+      .orderBy(asc(invites.createdAt));
+
+    return c.json({ invites: pending });
+  });
+
+  // DELETE /api/dashboard/:orgSlug/invites/:id — revoke invite (admin only)
+  router.delete('/:orgSlug/invites/:id', async (c) => {
+    const org = c.get('org');
+    const userRole = c.get('userRole');
+    if (userRole !== 'admin') return c.json({ error: 'Forbidden' }, 403);
+
+    const inviteId = c.req.param('id');
+
+    const [deleted] = await db
+      .delete(invites)
+      .where(and(eq(invites.id, inviteId), eq(invites.orgId, org.id)))
+      .returning({ id: invites.id });
+
+    if (!deleted) return c.json({ error: 'Invite not found' }, 404);
     return c.body(null, 204);
   });
 
