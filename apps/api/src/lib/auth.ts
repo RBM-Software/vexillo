@@ -47,7 +47,6 @@ export function createAuth(db: DbClient) {
           required: false,
           defaultValue: false,
           input: false,
-          fieldName: 'is_super_admin',
         },
       },
     },

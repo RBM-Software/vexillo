@@ -36,14 +36,22 @@ const inviteRoute = createRoute({
 })
 
 // Public: / — "find your workspace" slug entry form
-// Redirects super-admins straight to /admin
+// Redirects super-admins straight to /admin, org members to their org
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: async () => {
     const { data: session } = await authClient.getSession()
-    if ((session?.user as Record<string, unknown>)?.isSuperAdmin === true) {
+    if (!session) return
+    if ((session.user as Record<string, unknown>).isSuperAdmin === true) {
       throw redirect({ to: '/admin' })
+    }
+    const res = await fetch('/api/dashboard/me/orgs')
+    if (res.ok) {
+      const { orgs } = await res.json() as { orgs: { slug: string }[] }
+      if (orgs.length === 1) {
+        throw redirect({ to: `/org/${orgs[0].slug}/flags` })
+      }
     }
   },
   component: WorkspacePage,
@@ -53,6 +61,16 @@ const indexRoute = createRoute({
 const orgSignInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/org/$slug/sign-in',
+  beforeLoad: async ({ params, search }) => {
+    const { data: session } = await authClient.getSession()
+    if (session) {
+      const res = await fetch(`/api/dashboard/${params.slug}/context`)
+      if (res.ok) {
+        const next = (search as { next?: string }).next
+        throw redirect({ to: next ?? `/org/${params.slug}/flags` })
+      }
+    }
+  },
   component: OrgSignInPage,
 })
 

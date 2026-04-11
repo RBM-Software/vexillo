@@ -58,6 +58,22 @@ export function createDashboardRouter(db: DbClient, getSession: GetSession) {
     await next();
   });
 
+  // GET /api/dashboard/me/orgs — list orgs the current user is a member of
+  router.get('/me/orgs', async (c) => {
+    const session = c.get('session');
+    const rows = await db
+      .select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
+      .from(organizationMembers)
+      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+      .where(
+        and(
+          eq(organizationMembers.userId, session.user.id),
+          eq(organizations.status, 'active'),
+        ),
+      );
+    return c.json({ orgs: rows });
+  });
+
   // Org context middleware — resolves org from slug, verifies membership
   router.use('/:orgSlug/*', async (c, next) => {
     const session = c.get('session');

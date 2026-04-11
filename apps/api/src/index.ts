@@ -45,6 +45,9 @@ app.use(
 // Health check — used by App Runner and CloudFront origin health checks
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
+// Per-org Okta OAuth — must be before the BetterAuth catch-all
+app.route('/api/auth/org-oauth', createOrgOAuthRouter(db, auth));
+
 // Auth routes — BetterAuth handles /api/auth/* (Okta OAuth, session)
 app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
 
@@ -68,9 +71,6 @@ app.route(
   '/api/invites',
   createInvitesRouter(db, (headers) => auth.api.getSession({ headers })),
 );
-
-// Per-org Okta OAuth — public routes for tenant sign-in flow
-app.route('/api/auth/org-oauth', createOrgOAuthRouter(db, auth));
 
 const port = Number(process.env.PORT ?? 3000);
 
