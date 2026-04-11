@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
 import { createDbClient } from '@vexillo/db';
 import { createSdkRouter } from './routes/sdk';
 import { createDashboardRouter } from './routes/dashboard';
@@ -13,6 +14,30 @@ const db = createDbClient(DATABASE_URL, { max: 10 });
 const auth = createAuth(db);
 
 const app = new Hono();
+
+// Security headers — applied to all responses.
+// crossOriginResourcePolicy/crossOriginOpenerPolicy/crossOriginEmbedderPolicy are
+// disabled here because the SDK route explicitly sets CORS * for cross-origin SDK
+// clients; those routes manage their own cross-origin posture.
+app.use(
+  secureHeaders({
+    xFrameOptions: 'DENY',
+    referrerPolicy: 'strict-origin-when-cross-origin',
+    strictTransportSecurity: 'max-age=31536000; includeSubDomains',
+    xContentTypeOptions: true,
+    xXssProtection: true,
+    xDnsPrefetchControl: true,
+    xDownloadOptions: true,
+    xPermittedCrossDomainPolicies: true,
+    originAgentCluster: true,
+    // Disabled: SDK routes serve cross-origin clients and manage their own headers.
+    crossOriginResourcePolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    // No CSP at the middleware level — the API serves JSON, not HTML.
+    // CSP for the SPA is enforced via CloudFront response headers policy.
+  }),
+);
 
 // Health check — used by App Runner and CloudFront origin health checks
 app.get('/health', (c) => c.json({ status: 'ok' }));

@@ -1,5 +1,6 @@
 import { describe, it, expect, mock } from 'bun:test';
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
 import { createSdkRouter } from './sdk';
 
 // Minimal mock DB that satisfies the shape used by createSdkRouter
@@ -17,6 +18,30 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
 
 function makeApp(db: Parameters<typeof createSdkRouter>[0]) {
   const app = new Hono();
+  app.get('/health', (c) => c.json({ status: 'ok' }));
+  app.route('/api/sdk', createSdkRouter(db));
+  return app;
+}
+
+// App wired up with the same secureHeaders config as index.ts
+function makeSecureApp(db: Parameters<typeof createSdkRouter>[0]) {
+  const app = new Hono();
+  app.use(
+    secureHeaders({
+      xFrameOptions: 'DENY',
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      strictTransportSecurity: 'max-age=31536000; includeSubDomains',
+      xContentTypeOptions: true,
+      xXssProtection: true,
+      xDnsPrefetchControl: true,
+      xDownloadOptions: true,
+      xPermittedCrossDomainPolicies: true,
+      originAgentCluster: true,
+      crossOriginResourcePolicy: false,
+      crossOriginOpenerPolicy: false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.route('/api/sdk', createSdkRouter(db));
   return app;
@@ -77,5 +102,44 @@ describe('GET /api/sdk/flags/stream', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     // Cancel the stream immediately to avoid dangling intervals in tests
     await res.body?.cancel();
+  });
+});
+
+describe('Security headers', () => {
+  it('sets X-Frame-Options: DENY on all responses', async () => {
+    const app = makeSecureApp(makeMockDb());
+    const res = await app.fetch(new Request('http://localhost/health'));
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+  });
+
+  it('sets X-Content-Type-Options: nosniff on all responses', async () => {
+    const app = makeSecureApp(makeMockDb());
+    const res = await app.fetch(new Request('http://localhost/health'));
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('sets Strict-Transport-Security on all responses', async () => {
+    const app = makeSecureApp(makeMockDb());
+    const res = await app.fetch(new Request('http://localhost/health'));
+    expect(res.headers.get('strict-transport-security')).toBe(
+      'max-age=31536000; includeSubDomains',
+    );
+  });
+
+  it('sets Referrer-Policy: strict-origin-when-cross-origin', async () => {
+    const app = makeSecureApp(makeMockDb());
+    const res = await app.fetch(new Request('http://localhost/health'));
+    expect(res.headers.get('referrer-policy')).toBe(
+      'strict-origin-when-cross-origin',
+    );
+  });
+
+  it('does not clobber CORS headers on SDK routes', async () => {
+    const app = makeSecureApp(makeMockDb());
+    const res = await app.fetch(new Request('http://localhost/api/sdk/flags'));
+    // SDK always emits CORS * — secureHeaders must not remove it
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    // Security headers still present
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   });
 });
