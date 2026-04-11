@@ -130,8 +130,8 @@ describe('POST /api/dashboard/flags', () => {
 
   it('creates a flag and returns 201', async () => {
     const created = { id: 'f-new', name: 'Beta', key: 'beta', description: '', createdAt: new Date() };
-    // insert flag → returning [created]; select envs → []; (no flagStates insert needed)
-    const app = makeApp(makeMockDb([[created], []]), adminSession);
+    // select envs → [e1]; insert flag → returning [created]; insert flagStates.onConflictDoNothing → []
+    const app = makeApp(makeMockDb([[{ id: 'e1' }], [created], []]), adminSession);
     const res = await app.fetch(
       new Request('http://localhost/api/dashboard/flags', {
         method: 'POST',
@@ -146,7 +146,8 @@ describe('POST /api/dashboard/flags', () => {
 
   it('auto-slugifies name into key', async () => {
     const created = { id: 'f2', name: 'My Feature', key: 'my-feature', description: '', createdAt: new Date() };
-    const app = makeApp(makeMockDb([[created], []]), adminSession);
+    // select envs → [e1]; insert flag → returning [created]; insert flagStates.onConflictDoNothing → []
+    const app = makeApp(makeMockDb([[{ id: 'e1' }], [created], []]), adminSession);
     const res = await app.fetch(
       new Request('http://localhost/api/dashboard/flags', {
         method: 'POST',
