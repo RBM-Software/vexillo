@@ -112,9 +112,12 @@ export function createDashboardRouter(db: DbClient, getSession: GetSession) {
     if (!key) return c.json({ error: 'Invalid key' }, 400);
 
     try {
-      const [flag] = await db.insert(flags).values({ name, key, description }).returning();
-
       const envs = await db.select({ id: environments.id }).from(environments);
+      if (envs.length === 0) {
+        return c.json({ error: 'Create an environment before creating flags' }, 400);
+      }
+
+      const [flag] = await db.insert(flags).values({ name, key, description }).returning();
       if (envs.length > 0) {
         await db
           .insert(flagStates)

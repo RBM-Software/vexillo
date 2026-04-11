@@ -381,14 +381,21 @@ export function HomePage() {
           </div>
         </div>
         {isAdmin && (
-          <Button
-            onClick={() => setCreateOpen(true)}
-            size="sm"
-            className="mt-1 shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            New flag
-          </Button>
+          <div className="mt-1 shrink-0 flex flex-col items-end gap-1">
+            <Button
+              onClick={() => setCreateOpen(true)}
+              size="sm"
+              disabled={!loading && environments.length === 0}
+            >
+              <Plus className="h-4 w-4" />
+              New flag
+            </Button>
+            {!loading && environments.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                <Link to="/environments" className="underline underline-offset-2">Create an environment</Link> first
+              </p>
+            )}
+          </div>
         )}
       </div>
 
@@ -427,7 +434,12 @@ export function HomePage() {
           <p className="text-sm text-muted-foreground mb-6 max-w-xs">
             Feature flags let you ship code dark and roll out features gradually.
           </p>
-          {isAdmin && (
+          {isAdmin && environments.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              <Link to="/environments" className="underline underline-offset-2">Create an environment</Link> before creating flags.
+            </p>
+          )}
+          {isAdmin && environments.length > 0 && (
             <Button onClick={() => setCreateOpen(true)} size="sm">
               <Plus className="h-4 w-4" />
               Create your first flag
