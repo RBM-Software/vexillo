@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    name: Migrate → Build API → Deploy API → Build Web → Upload Web
+    name: Build API → Deploy API → Build Web → Upload Web
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Node + pnpm (needed for migrations and Vite build) ──────────────────
+      # ── Node + pnpm (needed for Vite build) ────────────────────────────────
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
@@ -26,22 +26,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # ── Step 1: Run DB migrations ────────────────────────────────────────────
-      # Must complete before the new API image starts serving traffic.
-      # A failed migration exits non-zero and aborts the rest of the pipeline.
-      - name: Run database migrations
-        run: pnpm --filter @vexillo/db db:migrate
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-      # ── AWS credentials (shared for all AWS steps) ───────────────────────────
+      # ── AWS credentials (shared for all AWS steps) ──────────────────────────
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # ── Step 2: Build Docker image and push to ECR ───────────────────────────
+      # ── Step 1: Build Docker image and push to ECR ──────────────────────────
+      # The image runs migrations on startup (start.sh → drizzle-kit migrate)
+      # so CI never needs a direct DB connection.
       - name: Log in to Amazon ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
@@ -62,16 +56,15 @@ jobs:
           docker push "$REGISTRY/$REPOSITORY:latest"
           echo "image=$REGISTRY/$REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
-      # ── Step 3: Deploy new image to ECS Fargate and wait for stable ─────────
+      # ── Step 2: Deploy new image to ECS Fargate and wait for stable ─────────
+      # ECS replaces the old task with the new one. The new container runs
+      # drizzle-kit migrate before starting the API — migrations run inside the
+      # VPC and can reach the private RDS instance.
       - name: Deploy to ECS
         env:
           ECS_CLUSTER: ${{ secrets.ECS_CLUSTER_NAME }}
           ECS_SERVICE: ${{ secrets.ECS_SERVICE_NAME }}
-          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Update the ECS service to use the new image
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" \
             --service "$ECS_SERVICE" \
@@ -84,11 +77,11 @@ jobs:
             --services "$ECS_SERVICE"
           echo "ECS service is stable."
 
-      # ── Step 4: Build Vite SPA ───────────────────────────────────────────────
+      # ── Step 3: Build Vite SPA ───────────────────────────────────────────────
       - name: Build web app
         run: pnpm --filter @vexillo/web build
 
-      # ── Step 5: Sync dist/ to S3 ─────────────────────────────────────────────
+      # ── Step 4: Sync dist/ to S3 ─────────────────────────────────────────────
       - name: Upload web assets to S3
         env:
           S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
@@ -101,7 +94,7 @@ jobs:
           aws s3 cp apps/web/dist/index.html "s3://$S3_BUCKET/index.html" \
             --cache-control "no-cache, no-store, must-revalidate"
 
-      # ── Step 6: CloudFront invalidation ──────────────────────────────────────
+      # ── Step 5: CloudFront invalidation ──────────────────────────────────────
       - name: Invalidate CloudFront cache
         env:
           DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
