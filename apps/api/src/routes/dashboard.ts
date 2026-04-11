@@ -17,7 +17,9 @@ export type Session = {
     id: string;
     name: string;
     email: string;
+    // Transitional: single-tenant role kept until routes gain org context.
     role: string | null | undefined;
+    isSuperAdmin?: boolean | null;
   };
 };
 

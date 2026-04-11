@@ -1,14 +1,52 @@
 import { pgTable, uuid, text, boolean, timestamp, primaryKey } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-// Better Auth tables
+// ── Organizations ─────────────────────────────────────────────────────────────
+
+export const organizations = pgTable('organizations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  oktaClientId: text('okta_client_id').notNull(),
+  oktaClientSecret: text('okta_client_secret').notNull(),
+  oktaIssuer: text('okta_issuer').notNull(),
+  status: text('status').notNull().default('active'), // 'active' | 'suspended'
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const organizationMembers = pgTable('organization_members', {
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => authUser.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('viewer'), // 'admin' | 'viewer'
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.orgId, table.userId] }),
+]);
+
+export const invites = pgTable('invites', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  invitedByUserId: text('invited_by_user_id').notNull().references(() => authUser.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  role: text('role').notNull().default('viewer'), // 'admin' | 'viewer'
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Better Auth tables ────────────────────────────────────────────────────────
+
 export const authUser = pgTable('user', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull(),
   image: text('image'),
+  // Transitional: single-tenant role kept until dashboard routes gain org context.
+  // Per-org RBAC will move to organization_members when routes are rewritten.
   role: text('role').notNull().default('viewer'),
+  isSuperAdmin: boolean('is_super_admin').notNull().default(false),
   createdAt: timestamp('created_at').notNull(),
   updatedAt: timestamp('updated_at').notNull(),
 });
@@ -48,6 +86,10 @@ export const authVerification = pgTable('verification', {
   createdAt: timestamp('created_at'),
   updatedAt: timestamp('updated_at'),
 });
+
+// ── Feature flags ─────────────────────────────────────────────────────────────
+// Note: org_id will be added to environments and flags in the next migration,
+// once dashboard routes are rewritten to include :orgSlug context.
 
 export const environments = pgTable('environments', {
   id: uuid('id').primaryKey().defaultRandom(),
