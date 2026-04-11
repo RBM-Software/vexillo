@@ -672,9 +672,24 @@ describe('POST /api/dashboard/:orgSlug/invites', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 409 when email already belongs to an existing user', async () => {
+    // user-exists check: select.limit → [{ id: 'u1' }] — user found, blocked
+    const app = makeApp(adminDb([{ id: 'u1' }]), adminSession);
+    const res = await app.fetch(
+      new Request(`${BASE}/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'existing@example.com', role: 'viewer' }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'User already has an account' });
+  });
+
   it('creates invite and returns 201 with token', async () => {
+    // user-exists check: select.limit → [] (no user); delete existing invites → [];
     // insert.values.returning → [INVITE_STUB]
-    const app = makeApp(adminDb([INVITE_STUB]), adminSession);
+    const app = makeApp(adminDb([], [], [INVITE_STUB]), adminSession);
     const res = await app.fetch(
       new Request(`${BASE}/invites`, {
         method: 'POST',

@@ -560,6 +560,26 @@ export function createDashboardRouter(db: DbClient, getSession: GetSession) {
       return c.json({ error: 'Role must be admin or viewer' }, 400);
     }
 
+    // Block if a Vexillo user already exists with this email (one-user-one-tenant invariant)
+    const [existingUser] = await db
+      .select({ id: authUser.id })
+      .from(authUser)
+      .where(eq(authUser.email, email))
+      .limit(1);
+    if (existingUser) return c.json({ error: 'User already has an account' }, 409);
+
+    // Invalidate any existing pending invite for this email in this org (resend flow)
+    await db
+      .delete(invites)
+      .where(
+        and(
+          eq(invites.orgId, org.id),
+          eq(invites.email, email),
+          isNull(invites.acceptedAt),
+          gt(invites.expiresAt, new Date()),
+        ),
+      );
+
     const rawToken = generateInviteToken();
     const tokenHash = await hashKey(rawToken);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
