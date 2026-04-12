@@ -444,7 +444,7 @@ describe('POST /api/dashboard/:orgSlug/environments', () => {
   it('creates environment and returns 201 with raw API key', async () => {
     const created = { id: 'e-new', orgId: 'org-1', name: 'Staging', slug: 'staging', allowedOrigins: [] as string[], createdAt: new Date() };
     const app = makeApp(
-      adminService({ createEnvironment: async () => ({ environment: created, apiKey: 'sdk-abc123def456' }) }),
+      adminService({ createEnvironment: async () => ({ environment: created, apiKey: 'sdk-test-key-create' }) }),
       adminSession,
     );
     const res = await app.fetch(
@@ -565,7 +565,7 @@ describe('POST /api/dashboard/:orgSlug/environments/:id/rotate-key', () => {
 
   it('rotates key and returns new raw API key', async () => {
     const app = makeApp(
-      adminService({ rotateEnvironmentKey: async () => ({ apiKey: 'sdk-newkey123456789' }) }),
+      adminService({ rotateEnvironmentKey: async () => ({ apiKey: 'sdk-test-key-rotated' }) }),
       adminSession,
     );
     const res = await app.fetch(
