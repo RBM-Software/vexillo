@@ -339,3 +339,88 @@ describe('DELETE /api/superadmin/orgs/:slug', () => {
     expect(res.status).toBe(204);
   });
 });
+
+// ── PATCH /api/superadmin/users/:userId ──────────────────────────────────────
+
+describe('PATCH /api/superadmin/users/:userId', () => {
+  it('returns 400 when isSuperAdmin is missing from body', async () => {
+    const app = makeApp(makeMockDb(), superSession);
+    const res = await app.fetch(new Request(`${BASE}/users/u-other`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'isSuperAdmin must be a boolean' });
+  });
+
+  it('returns 400 when caller attempts to demote themselves', async () => {
+    const app = makeApp(makeMockDb(), superSession);
+    const res = await app.fetch(new Request(`${BASE}/users/u-super`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isSuperAdmin: false }),
+    }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Cannot demote yourself' });
+  });
+
+  it('returns 404 when user not found', async () => {
+    const app = makeApp(makeMockDb([[]]), superSession);
+    const res = await app.fetch(new Request(`${BASE}/users/u-ghost`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isSuperAdmin: true }),
+    }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'User not found' });
+  });
+
+  it('promotes another user and returns user data', async () => {
+    const promoted = { id: 'u-other', email: 'other@example.com', isSuperAdmin: true };
+    const app = makeApp(makeMockDb([[promoted]]), superSession);
+    const res = await app.fetch(new Request(`${BASE}/users/u-other`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isSuperAdmin: true }),
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json() as { user: typeof promoted };
+    expect(body.user.id).toBe('u-other');
+    expect(body.user.isSuperAdmin).toBe(true);
+  });
+
+  it('demotes another user (not self)', async () => {
+    const demoted = { id: 'u-other', email: 'other@example.com', isSuperAdmin: false };
+    const app = makeApp(makeMockDb([[demoted]]), superSession);
+    const res = await app.fetch(new Request(`${BASE}/users/u-other`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isSuperAdmin: false }),
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json() as { user: typeof demoted };
+    expect(body.user.isSuperAdmin).toBe(false);
+  });
+
+  it('allows caller to promote themselves', async () => {
+    const promoted = { id: 'u-super', email: 'super@example.com', isSuperAdmin: true };
+    const app = makeApp(makeMockDb([[promoted]]), superSession);
+    const res = await app.fetch(new Request(`${BASE}/users/u-super`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isSuperAdmin: true }),
+    }));
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 403 for non-super-admin', async () => {
+    const app = makeApp(makeMockDb(), regularSession);
+    const res = await app.fetch(new Request(`${BASE}/users/u-other`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isSuperAdmin: true }),
+    }));
+    expect(res.status).toBe(403);
+  });
+});

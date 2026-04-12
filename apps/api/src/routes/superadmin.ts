@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, desc, count } from 'drizzle-orm';
-import { organizations, organizationMembers } from '@vexillo/db';
+import { organizations, organizationMembers, authUser } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import type { GetSession, Session } from './dashboard';
 
@@ -159,6 +159,37 @@ export function createSuperAdminRouter(db: DbClient, getSession: GetSession) {
       .returning({ id: organizations.id });
     if (result.length === 0) return c.json({ error: 'Organization not found' }, 404);
     return c.body(null, 204);
+  });
+
+  // ── Users ────────────────────────────────────────────────────────────────────
+
+  // PATCH /api/superadmin/users/:userId — promote or demote a user's super admin status
+  router.patch('/users/:userId', async (c) => {
+    const session = c.get('session');
+    const userId = c.req.param('userId');
+    const body = await c.req.json();
+
+    if (typeof body.isSuperAdmin !== 'boolean') {
+      return c.json({ error: 'isSuperAdmin must be a boolean' }, 400);
+    }
+
+    // Prevent self-demotion
+    if (userId === session.user.id && !body.isSuperAdmin) {
+      return c.json({ error: 'Cannot demote yourself' }, 400);
+    }
+
+    const result = await db
+      .update(authUser)
+      .set({ isSuperAdmin: body.isSuperAdmin })
+      .where(eq(authUser.id, userId))
+      .returning({
+        id: authUser.id,
+        email: authUser.email,
+        isSuperAdmin: authUser.isSuperAdmin,
+      });
+
+    if (result.length === 0) return c.json({ error: 'User not found' }, 404);
+    return c.json({ user: result[0] });
   });
 
   return router;
