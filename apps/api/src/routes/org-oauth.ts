@@ -358,13 +358,7 @@ export function createOrgOAuthRouter(db: DbClient, auth: Auth) {
       await db.update(authUser).set({ isSuperAdmin: true }).where(eq(authUser.id, userId));
     }
 
-    // Super admins go to /admin; everyone else goes to the requested next URL.
-    // Covers: (a) just-promoted via email match, (b) pre-existing super admin.
-    const existingIsSuperAdmin =
-      existing != null &&
-      (existing.user as Record<string, unknown>).isSuperAdmin === true;
-    const redirectTarget =
-      emailMatchesSuperAdmin || existingIsSuperAdmin ? '/admin' : parsed.next || '/';
+    const redirectTarget = parsed.next || '/';
 
     // Create BetterAuth session
     const session = await ctx.internalAdapter.createSession(userId);

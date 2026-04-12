@@ -29,16 +29,13 @@ const inviteRoute = createRoute({
 })
 
 // Public: / — "find your workspace" slug entry form
-// Redirects super-admins straight to /admin, org members to their org
+// Home: / — workspace picker; single-org users go straight to their org
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: async () => {
     const { data: session } = await authClient.getSession()
     if (!session) return
-    if ((session?.user as Record<string, unknown>)?.isSuperAdmin === true) {
-      throw redirect({ to: '/admin' })
-    }
     const res = await fetch('/api/dashboard/me/orgs')
     if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
       const { orgs } = await res.json() as { orgs: { slug: string }[] }
