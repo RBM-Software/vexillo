@@ -6,7 +6,7 @@ Self-hosted feature flag service. Manage flags per environment and organisation,
 
 | Package | Description |
 |---------|-------------|
-| `apps/api` | Hono API (Bun runtime) — auth, dashboard, SDK, super-admin, and invite endpoints |
+| `apps/api` | Hono API (Bun runtime) — auth, dashboard, SDK, super-admin endpoints; Okta JIT member provisioning |
 | `apps/web` | Vite + React dashboard — org management, flags, environments, and members |
 | `packages/db` | Drizzle ORM schema + PostgreSQL migrations shared by `api` and `web` |
 | `packages/react-sdk` | `@vexillo/react-sdk` — React bindings for consuming flags in any app |
@@ -49,7 +49,7 @@ pnpm dev
    ```
 3. Sign in again — you'll be redirected to `/admin`
 4. Create an organisation and configure its Okta OAuth credentials (use `https://<domain>.okta.com` as the issuer, not `/oauth2/default`)
-5. Org members sign in at `http://localhost:5173/org/<slug>/sign-in`
+5. Org members sign in at `http://localhost:5173/org/<slug>/sign-in` — their account is provisioned automatically on first sign-in via Okta JIT
 
 ## Scripts
 
