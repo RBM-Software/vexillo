@@ -28,11 +28,13 @@ export function AppShell({
   org,
   role,
   userEmail,
+  isSuperAdmin,
   children,
 }: {
   org: OrgInfo
   role: string
   userEmail: string
+  isSuperAdmin?: boolean
   children: React.ReactNode
 }) {
   const { location } = useRouterState()
@@ -42,7 +44,7 @@ export function AppShell({
 
   return (
     <SidebarProvider>
-      <AppSidebar org={org} role={role} userEmail={userEmail} />
+      <AppSidebar org={org} role={role} userEmail={userEmail} isSuperAdmin={isSuperAdmin} />
       <SidebarInset className="min-h-dvh min-w-0">
         <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur-sm supports-backdrop-filter:bg-background/80 sm:px-6">
           <SidebarTrigger className="-ms-1" />

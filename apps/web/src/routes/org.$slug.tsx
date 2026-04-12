@@ -9,10 +9,11 @@ export function OrgLayout() {
   const ctx = useRouteContext({ strict: false }) as OrgContextValue
   const { data: session } = authClient.useSession()
   const userEmail = session?.user?.email ?? ''
+  const isSuperAdmin = (session?.user as Record<string, unknown> | undefined)?.isSuperAdmin === true
 
   return (
     <OrgCtx.Provider value={ctx}>
-      <AppShell org={ctx.org} role={ctx.role} userEmail={userEmail}>
+      <AppShell org={ctx.org} role={ctx.role} userEmail={userEmail} isSuperAdmin={isSuperAdmin}>
         <Outlet />
       </AppShell>
     </OrgCtx.Provider>

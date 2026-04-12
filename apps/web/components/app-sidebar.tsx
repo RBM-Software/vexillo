@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import { Boxes, Flag, Users } from 'lucide-react'
+import { Boxes, Flag, Shield, Users } from 'lucide-react'
 
 import { SignOutButton } from '@/components/sign-out-button'
 import {
@@ -19,10 +19,12 @@ export function AppSidebar({
   org,
   role,
   userEmail,
+  isSuperAdmin = false,
 }: {
   org: OrgInfo
   role: string
   userEmail: string
+  isSuperAdmin?: boolean
 }) {
   const { location } = useRouterState()
   const pathname = location.pathname
@@ -85,6 +87,18 @@ export function AppSidebar({
                   >
                     <Users className="opacity-80" />
                     <span className="font-medium">Members</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+              {isSuperAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith('/admin')}
+                    className="px-3 py-2.5"
+                    render={<Link to="/admin" />}
+                  >
+                    <Shield className="opacity-80" />
+                    <span className="font-medium">Admin</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
