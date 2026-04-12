@@ -42,7 +42,8 @@ app.use(
   }),
 );
 
-// Health check — used by App Runner and CloudFront origin health checks
+// Health check — ALB target group uses "/" (CF default), also expose "/health"
+app.get('/', (c) => c.json({ status: 'ok' }));
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
 // Per-org Okta OAuth — must be before the BetterAuth catch-all
