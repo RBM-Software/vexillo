@@ -4,7 +4,6 @@ Vite + React dashboard for managing feature flags, environments, org members, an
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) ≥ 20
 - [pnpm](https://pnpm.io) ≥ 10
 - The API (`apps/api`) running locally
 
@@ -41,18 +40,14 @@ Dashboard runs at `http://localhost:5173`.
 | Path | Access | Description |
 |------|--------|-------------|
 | `/` | Public | Workspace finder — enter an org slug to navigate to it |
-| `/sign-in` | Public | Platform sign-in (Okta OAuth) |
 | `/org/:slug/sign-in` | Public | Org-specific sign-in (org's own Okta) |
 | `/org/:slug/flags` | Org member | Feature flags list |
 | `/org/:slug/flags/:key` | Org member | Flag detail + per-environment toggles |
 | `/org/:slug/environments` | Org member | Environments + API keys |
-| `/org/:slug/members` | Org member | Members + invite management |
-| `/invite` | Authenticated | Accept an org invite via token |
+| `/org/:slug/members` | Org member | Members list |
 | `/admin` | Super-admin | Org list |
 | `/admin/orgs/new` | Super-admin | Create an org |
 | `/admin/orgs/:slug` | Super-admin | Org detail — edit Okta config, suspend/activate |
-
-Authenticated users are redirected away from `/` and `/org/:slug/sign-in` to their dashboard automatically.
 
 ## Tech stack
 

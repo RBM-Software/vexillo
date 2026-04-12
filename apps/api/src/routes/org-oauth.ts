@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { organizations, authUser, organizationMembers } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import type { Auth } from '../lib/auth';
+import { decryptSecret } from '../lib/okta-crypto';
 
 // ── PKCE helpers ──────────────────────────────────────────────────────────────
 
@@ -311,9 +312,16 @@ export function createOrgOAuthRouter(db: DbClient, auth: Auth) {
     const baseUrl = process.env.BETTER_AUTH_URL!;
     const callbackUrl = `${baseUrl}/api/auth/org-oauth/callback`;
 
+    let oktaClientSecret: string;
+    try {
+      oktaClientSecret = await decryptSecret(org.oktaClientSecret);
+    } catch {
+      return fail('okta_config_error');
+    }
+
     const tokens = await exchangeCode(
       org.oktaClientId,
-      org.oktaClientSecret,
+      oktaClientSecret,
       code,
       parsed.codeVerifier,
       callbackUrl,

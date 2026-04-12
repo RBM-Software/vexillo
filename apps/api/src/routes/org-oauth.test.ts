@@ -1,7 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, spyOn } from 'bun:test';
 import { Hono } from 'hono';
 import { createOrgOAuthRouter } from './org-oauth';
 import type { Auth } from '../lib/auth';
+import { encryptSecret } from '../lib/okta-crypto';
+
+// Fixed test key — 64 hex chars = 32 bytes
+process.env.OKTA_SECRET_KEY = 'a'.repeat(64);
 
 // ── Mock DB ───────────────────────────────────────────────────────────────────
 
@@ -80,18 +84,24 @@ const BASE = 'http://localhost/api/auth/org-oauth';
 
 // ── Test fixtures ─────────────────────────────────────────────────────────────
 
-const ACTIVE_ORG = {
+const ACTIVE_ORG_BASE = {
   id: 'org-1',
   name: 'Acme',
   slug: 'acme',
   status: 'active',
   oktaClientId: 'okta-client-id',
-  oktaClientSecret: 'okta-client-secret',
+  oktaClientSecret: 'placeholder', // replaced in beforeAll with encrypted value
   oktaIssuer: 'https://acme.okta.com',
   createdAt: new Date(),
 };
 
-const SUSPENDED_ORG = { ...ACTIVE_ORG, status: 'suspended' };
+let ACTIVE_ORG = ACTIVE_ORG_BASE;
+
+beforeAll(async () => {
+  ACTIVE_ORG = { ...ACTIVE_ORG_BASE, oktaClientSecret: await encryptSecret('okta-client-secret') };
+});
+
+const SUSPENDED_ORG = { ...ACTIVE_ORG_BASE, status: 'suspended' };
 
 const MOCK_DISCOVERY = {
   authorization_endpoint: 'https://acme.okta.com/oauth2/v1/authorize',
@@ -374,7 +384,7 @@ describe('SUPER_ADMIN_EMAILS auto-promotion and redirect', () => {
     );
   }
 
-  it('promotes user and redirects to /admin when email matches SUPER_ADMIN_EMAILS', async () => {
+  it('promotes user and redirects to next when email matches SUPER_ADMIN_EMAILS', async () => {
     const { signedCookieForTest, nonce } = await buildTestStateCookie({
       nonce: 'nonce-promote',
       orgSlug: 'acme',
@@ -412,7 +422,7 @@ describe('SUPER_ADMIN_EMAILS auto-promotion and redirect', () => {
       );
 
       expect(res.status).toBe(302);
-      expect(res.headers.get('Location')).toBe('/admin');
+      expect(res.headers.get('Location')).toBe('/org/acme/flags');
       expect(capturedUpdate).toBe(true);
     } finally {
       fetchSpy.mockRestore();
@@ -464,7 +474,7 @@ describe('SUPER_ADMIN_EMAILS auto-promotion and redirect', () => {
     }
   });
 
-  it('redirects existing super admin to /admin without email match', async () => {
+  it('redirects existing super admin to next without email match', async () => {
     const { signedCookieForTest, nonce } = await buildTestStateCookie({
       nonce: 'nonce-existing-sa',
       orgSlug: 'acme',
@@ -495,7 +505,7 @@ describe('SUPER_ADMIN_EMAILS auto-promotion and redirect', () => {
       );
 
       expect(res.status).toBe(302);
-      expect(res.headers.get('Location')).toBe('/admin');
+      expect(res.headers.get('Location')).toBe('/org/acme/flags');
     } finally {
       fetchSpy.mockRestore();
       delete process.env.SUPER_ADMIN_EMAILS;
@@ -534,7 +544,7 @@ describe('SUPER_ADMIN_EMAILS auto-promotion and redirect', () => {
       );
 
       expect(res.status).toBe(302);
-      expect(res.headers.get('Location')).toBe('/admin');
+      expect(res.headers.get('Location')).toBe('/');
     } finally {
       fetchSpy.mockRestore();
       delete process.env.SUPER_ADMIN_EMAILS;

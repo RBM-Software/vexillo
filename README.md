@@ -6,18 +6,17 @@ Self-hosted feature flag service. Manage flags per environment and organisation,
 
 | Package | Description |
 |---------|-------------|
-| `apps/api` | Hono API (Bun runtime) — auth, dashboard, SDK, super-admin endpoints; Okta JIT member provisioning |
+| `apps/api` | Hono API (Bun runtime) — auth, dashboard, SDK, and super-admin endpoints; Okta JIT member provisioning |
 | `apps/web` | Vite + React dashboard — org management, flags, environments, and members |
-| `packages/db` | Drizzle ORM schema + PostgreSQL migrations shared by `api` and `web` |
+| `packages/db` | Drizzle ORM schema + PostgreSQL migrations |
 | `packages/react-sdk` | `@vexillo/react-sdk` — React bindings for consuming flags in any app |
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) ≥ 1.x (API runtime)
-- [Node.js](https://nodejs.org) ≥ 20 (web tooling)
+- [Bun](https://bun.sh) ≥ 1.x
 - [pnpm](https://pnpm.io) ≥ 10
 - PostgreSQL ≥ 14
-- An [Okta](https://developer.okta.com) account
+- An [Okta](https://developer.okta.com) account (one app per organisation)
 
 ## Getting started
 
@@ -25,7 +24,17 @@ Self-hosted feature flag service. Manage flags per environment and organisation,
 pnpm install
 ```
 
-Set up environment variables for each app (see their individual READMEs), then push the schema to your database:
+Set required environment variables for `apps/api`:
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `BETTER_AUTH_URL` | Base URL of the API (e.g. `http://localhost:3000`) |
+| `BETTER_AUTH_SECRET` | Random secret for session signing |
+| `OKTA_SECRET_KEY` | 64-char hex string for encrypting Okta client secrets at rest — generate with `openssl rand -hex 32` |
+| `SUPER_ADMIN_EMAILS` | Comma-separated list of emails auto-promoted to super-admin on first sign-in |
+
+Push the schema to your database:
 
 ```sh
 pnpm --filter @vexillo/db db:push
@@ -42,14 +51,10 @@ pnpm dev
 
 ## First-time setup
 
-1. Sign in at `http://localhost:5173/sign-in` via your platform Okta app — the first account created becomes an admin
-2. Promote that account to super-admin:
-   ```sh
-   pnpm --filter @vexillo/api promote:super-admin -- --email you@example.com
-   ```
-3. Sign in again — you'll be redirected to `/admin`
-4. Create an organisation and configure its Okta OAuth credentials (use `https://<domain>.okta.com` as the issuer, not `/oauth2/default`)
-5. Org members sign in at `http://localhost:5173/org/<slug>/sign-in` — their account is provisioned automatically on first sign-in via Okta JIT
+1. Visit `http://localhost:5173` — enter your org slug to reach the sign-in page, or go directly to `http://localhost:5173/org/<slug>/sign-in`
+2. The first user to sign in via an org's Okta app is provisioned as a viewer; set `SUPER_ADMIN_EMAILS` to auto-promote specific accounts to super-admin on sign-in
+3. Super-admins access `/admin` to create organisations and configure each org's Okta OAuth credentials (use `https://<domain>.okta.com` as the issuer, not `/oauth2/default`)
+4. Org members sign in at `http://localhost:5173/org/<slug>/sign-in` — their account is provisioned automatically on first sign-in via Okta JIT
 
 ## Scripts
 

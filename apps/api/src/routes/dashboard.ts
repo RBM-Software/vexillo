@@ -88,7 +88,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     if (!name) return c.json({ error: 'Name is required' }, 400);
 
     try {
-      const flag = await service.createFlag(org.id, {
+      const flag = await service.createFlag(org.id, c.get('session')!.user.id, {
         name,
         key: body.key?.trim(),
         description: body.description?.trim() ?? '',
@@ -112,7 +112,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     if (Object.keys(patch).length === 0) return c.json({ error: 'No fields to update' }, 400);
 
     try {
-      const flag = await service.updateFlag(org.id, key, patch);
+      const flag = await service.updateFlag(org.id, c.get('session')!.user.id, key, patch);
       return c.json({ flag });
     } catch (err) {
       return handleServiceError(err, c) ?? (() => { throw err; })();
@@ -124,7 +124,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     if (c.get('userRole') !== 'admin') return c.json({ error: 'Forbidden' }, 403);
 
     try {
-      await service.deleteFlag(org.id, c.req.param('key'));
+      await service.deleteFlag(org.id, c.get('session')!.user.id, c.req.param('key'));
       return c.body(null, 204);
     } catch (err) {
       return handleServiceError(err, c) ?? (() => { throw err; })();
@@ -139,7 +139,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     if (!environmentId) return c.json({ error: 'environmentId is required' }, 400);
 
     try {
-      const result = await service.toggleFlag(org.id, c.req.param('key'), environmentId);
+      const result = await service.toggleFlag(org.id, c.get('session')!.user.id, c.req.param('key'), environmentId);
       return c.json(result);
     } catch (err) {
       return handleServiceError(err, c) ?? (() => { throw err; })();
@@ -163,7 +163,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     if (!name) return c.json({ error: 'Name is required' }, 400);
 
     try {
-      const result = await service.createEnvironment(org.id, name);
+      const result = await service.createEnvironment(org.id, c.get('session')!.user.id, name);
       return c.json(result, 201);
     } catch (err) {
       return handleServiceError(err, c) ?? (() => { throw err; })();
@@ -185,6 +185,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     try {
       const environment = await service.updateEnvironmentOrigins(
         org.id,
+        c.get('session')!.user.id,
         c.req.param('id'),
         body.allowedOrigins,
       );
@@ -199,7 +200,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     if (c.get('userRole') !== 'admin') return c.json({ error: 'Forbidden' }, 403);
 
     try {
-      await service.deleteEnvironment(org.id, c.req.param('id'));
+      await service.deleteEnvironment(org.id, c.get('session')!.user.id, c.req.param('id'));
       return c.body(null, 204);
     } catch (err) {
       return handleServiceError(err, c) ?? (() => { throw err; })();
@@ -211,7 +212,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     if (c.get('userRole') !== 'admin') return c.json({ error: 'Forbidden' }, 403);
 
     try {
-      const result = await service.rotateEnvironmentKey(org.id, c.req.param('id'));
+      const result = await service.rotateEnvironmentKey(org.id, c.get('session')!.user.id, c.req.param('id'));
       return c.json(result);
     } catch (err) {
       return handleServiceError(err, c) ?? (() => { throw err; })();
@@ -233,7 +234,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
 
     const body = await c.req.json();
     try {
-      const member = await service.updateMemberRole(org.id, c.req.param('userId'), body.role);
+      const member = await service.updateMemberRole(org.id, c.get('session')!.user.id, c.req.param('userId'), body.role);
       return c.json({ member });
     } catch (err) {
       return handleServiceError(err, c) ?? (() => { throw err; })();
@@ -245,7 +246,7 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
     if (c.get('userRole') !== 'admin') return c.json({ error: 'Forbidden' }, 403);
 
     try {
-      await service.removeMember(org.id, c.req.param('userId'));
+      await service.removeMember(org.id, c.get('session')!.user.id, c.req.param('userId'));
       return c.body(null, 204);
     } catch (err) {
       return handleServiceError(err, c) ?? (() => { throw err; })();

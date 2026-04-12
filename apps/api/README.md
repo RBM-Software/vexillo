@@ -1,32 +1,25 @@
 # @vexillo/api
 
-Hono API server running on Bun. Handles authentication, the dashboard API, the public SDK endpoints, super-admin management, and org member invites.
+Hono API server running on Bun. Handles authentication, the dashboard API, the public SDK endpoint, and super-admin management.
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) ≥ 1.x
 - PostgreSQL ≥ 14
-- An [Okta](https://developer.okta.com) OIDC app for platform sign-in
+- An [Okta](https://developer.okta.com) app per organisation (configured by super-admins in the dashboard)
 
 ## Environment variables
-
-Copy and fill in the values:
-
-```sh
-cp .env.example .env
-```
 
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string, e.g. `postgresql://user:pass@localhost:5432/vexillo` |
-| `BETTER_AUTH_URL` | Public base URL of the web dashboard (used as the auth base URL), e.g. `http://localhost:5173` |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | Comma-separated list of origins allowed to make auth requests, e.g. `http://localhost:5173` |
+| `BETTER_AUTH_URL` | Base URL of this API server, e.g. `http://localhost:3000` |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | Comma-separated origins allowed to make auth requests, e.g. `http://localhost:5173` |
 | `BETTER_AUTH_SECRET` | Random secret for signing sessions — generate with `openssl rand -base64 32` |
-| `OKTA_CLIENT_ID` | Client ID of the Okta OIDC app used for platform sign-in |
-| `OKTA_CLIENT_SECRET` | Client secret of the platform Okta app |
-| `OKTA_ISSUER` | Issuer URL of the platform Okta org, e.g. `https://dev-xxxxx.okta.com` |
+| `OKTA_SECRET_KEY` | 64-char hex string for encrypting per-org Okta client secrets at rest — generate with `openssl rand -hex 32` |
+| `SUPER_ADMIN_EMAILS` | Comma-separated emails auto-promoted to super-admin on first sign-in |
 
-> **Per-org Okta credentials** (for org member sign-in) are stored in the database and configured via the super-admin dashboard, not via environment variables.
+> Per-org Okta credentials are stored encrypted in the database and configured via the super-admin dashboard, not via environment variables.
 
 ## Running locally
 
@@ -44,22 +37,22 @@ The API starts on `http://localhost:3000` with hot reload.
 | `bun run start` | Start without hot reload |
 | `bun run typecheck` | TypeScript type check |
 | `bun test` | Run test suite |
-| `bun run promote:super-admin -- --email you@example.com` | Promote a user to super-admin |
 
 ## Route overview
 
 | Prefix | Auth | Description |
 |--------|------|-------------|
 | `GET /health` | None | Health check for load balancers |
-| `/api/auth/org-oauth/*` | None | Per-org Okta PKCE OAuth flow |
-| `/api/auth/*` | None | BetterAuth — platform Okta OAuth, session management |
-| `/api/sdk/*` | API key | Public SDK endpoint — flag evaluation, CDN-cacheable |
+| `/api/auth/org-oauth/*` | None | Per-org Okta PKCE OAuth flow (authorize + callback) |
+| `/api/auth/*` | None | BetterAuth — session management |
+| `/api/sdk/*` | API key | Public SDK endpoint — flag states, CDN-cacheable |
 | `/api/dashboard/*` | Session | Org dashboard — flags, environments, members, API keys |
-| `/api/superadmin/*` | Super-admin | Org CRUD, status management |
-| `/api/invites/*` | Session (no org) | Accept org member invites |
+| `/api/superadmin/*` | Super-admin | Org CRUD, Okta config, status management |
 
 ## Auth
 
-Platform sign-in (super-admins and initial org setup) uses Okta OAuth via [BetterAuth](https://better-auth.com). Org member sign-in uses a per-org PKCE flow with each org's own Okta credentials.
+Authentication is per-org — each organisation configures its own Okta OIDC app. Members sign in through their org's Okta tenant via a PKCE flow. There is no global sign-in page.
 
-The first user account created is assigned the `admin` role. Use `promote:super-admin` to grant `isSuperAdmin` to an existing account.
+Session management is handled by [BetterAuth](https://better-auth.com). Okta client secrets are encrypted at rest using AES-256-GCM (requires `OKTA_SECRET_KEY`).
+
+The first user to sign in via an org's Okta app is provisioned as a viewer. Set `SUPER_ADMIN_EMAILS` to auto-promote specific accounts to super-admin on sign-in.

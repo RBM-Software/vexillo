@@ -11,3 +11,4 @@ export * from './queries/environments';
 export * from './queries/members';
 export * from './queries/orgs';
 export * from './queries/sdk';
+export * from './queries/audit';

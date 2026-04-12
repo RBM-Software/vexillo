@@ -2,8 +2,10 @@ import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
 import { createDashboardRouter } from './dashboard';
 import type { GetSession, Session } from './dashboard';
+import type { DashboardService, OrgRow } from '../services/dashboard-service';
+import { NotFoundError, ConflictError, PreconditionError } from '../services/dashboard-service';
 
-// ── Mock helpers ────────────────────────────────────────────────────────────
+// ── Session fixtures ─────────────────────────────────────────────────────────
 
 const ADMIN_SESSION: Session = {
   user: { id: 'u-admin', name: 'Admin', email: 'admin@example.com' },
@@ -16,87 +18,100 @@ const noSession: GetSession = async () => null;
 const adminSession: GetSession = async () => ADMIN_SESSION;
 const viewerSession: GetSession = async () => VIEWER_SESSION;
 
-// Org + membership fixtures prepended to every authenticated request queue.
-const ORG = {
+// ── Org fixtures ─────────────────────────────────────────────────────────────
+
+const ORG: OrgRow = {
   id: 'org-1',
   name: 'Acme',
   slug: 'acme',
   status: 'active',
   oktaClientId: 'okta-id',
-  oktaClientSecret: 'okta-secret',
+  oktaClientSecret: 'encrypted-secret',
   oktaIssuer: 'https://acme.okta.com',
   createdAt: new Date(),
 };
-const ADMIN_MEMBER = [{ role: 'admin' }];
-const VIEWER_MEMBER = [{ role: 'viewer' }];
 
-// Chainable mock DB — results consumed FIFO from the queue.
-// Terminal methods (.limit, .orderBy, .returning, .onConflictDoNothing) pop one entry.
-// `await chain` (no explicit terminal) pops via `.then`.
-function makeMockDb(staticResults: unknown[][] = []) {
-  const queue = [...staticResults];
+// ── Mock service factory ─────────────────────────────────────────────────────
+//
+// Returns a DashboardService where every method throws by default.
+// Pass `overrides` to configure the behaviour needed for each test.
 
-  function consume(): unknown[] {
-    return (queue.shift() ?? []) as unknown[];
-  }
+function makeMockService(overrides: Partial<DashboardService> = {}): DashboardService {
+  const notImplemented = (name: string) => () => {
+    throw new Error(`Mock service method not implemented: ${name}`);
+  };
 
-  const chain: Record<string, unknown> = {};
-
-  chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-    Promise.resolve(consume()).then(resolve, reject);
-
-  for (const m of [
-    'select', 'from', 'where', 'leftJoin', 'rightJoin', 'crossJoin', 'innerJoin',
-    'insert', 'values', 'onConflictDoUpdate', 'update', 'set', 'delete',
-  ]) {
-    chain[m] = () => chain;
-  }
-
-  for (const m of ['limit', 'orderBy', 'returning', 'onConflictDoNothing']) {
-    chain[m] = () => Promise.resolve(consume());
-  }
-
-  return chain as unknown as Parameters<typeof createDashboardRouter>[0];
+  return {
+    resolveOrgContext: notImplemented('resolveOrgContext') as DashboardService['resolveOrgContext'],
+    getMyOrgs: notImplemented('getMyOrgs') as DashboardService['getMyOrgs'],
+    getFlagsWithStates: notImplemented('getFlagsWithStates') as DashboardService['getFlagsWithStates'],
+    createFlag: notImplemented('createFlag') as DashboardService['createFlag'],
+    updateFlag: notImplemented('updateFlag') as DashboardService['updateFlag'],
+    deleteFlag: notImplemented('deleteFlag') as DashboardService['deleteFlag'],
+    toggleFlag: notImplemented('toggleFlag') as DashboardService['toggleFlag'],
+    getEnvironments: notImplemented('getEnvironments') as DashboardService['getEnvironments'],
+    createEnvironment: notImplemented('createEnvironment') as DashboardService['createEnvironment'],
+    updateEnvironmentOrigins: notImplemented('updateEnvironmentOrigins') as DashboardService['updateEnvironmentOrigins'],
+    deleteEnvironment: notImplemented('deleteEnvironment') as DashboardService['deleteEnvironment'],
+    rotateEnvironmentKey: notImplemented('rotateEnvironmentKey') as DashboardService['rotateEnvironmentKey'],
+    getMembers: notImplemented('getMembers') as DashboardService['getMembers'],
+    updateMemberRole: notImplemented('updateMemberRole') as DashboardService['updateMemberRole'],
+    removeMember: notImplemented('removeMember') as DashboardService['removeMember'],
+    ...overrides,
+  };
 }
 
-// Convenience: prepend org + admin/viewer membership results to the queue.
-function adminDb(...rest: unknown[][]): ReturnType<typeof makeMockDb> {
-  return makeMockDb([[ORG], ADMIN_MEMBER, ...rest]);
-}
-function viewerDb(...rest: unknown[][]): ReturnType<typeof makeMockDb> {
-  return makeMockDb([[ORG], VIEWER_MEMBER, ...rest]);
+// Convenience: an adminCtx-resolving service (most tests need this to pass the org middleware).
+function adminService(overrides: Partial<DashboardService> = {}): DashboardService {
+  return makeMockService({
+    resolveOrgContext: async () => ({ org: ORG, role: 'admin' }),
+    ...overrides,
+  });
 }
 
-function makeApp(db: Parameters<typeof createDashboardRouter>[0], getSession: GetSession) {
+function viewerService(overrides: Partial<DashboardService> = {}): DashboardService {
+  return makeMockService({
+    resolveOrgContext: async () => ({ org: ORG, role: 'viewer' }),
+    ...overrides,
+  });
+}
+
+function makeApp(service: DashboardService, getSession: GetSession) {
   const app = new Hono();
-  app.route('/api/dashboard', createDashboardRouter(db, getSession));
+  app.route('/api/dashboard', createDashboardRouter(service, getSession));
   return app;
 }
 
 const BASE = 'http://localhost/api/dashboard/acme';
 
-// ── Auth middleware ─────────────────────────────────────────────────────────
+// ── Auth middleware ──────────────────────────────────────────────────────────
 
 describe('dashboard auth middleware', () => {
   it('returns 401 when no session', async () => {
-    const app = makeApp(makeMockDb(), noSession);
+    const app = makeApp(makeMockService(), noSession);
     const res = await app.fetch(new Request(`${BASE}/flags`));
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'Unauthorized' });
   });
 
   it('allows authenticated requests through', async () => {
-    const app = makeApp(adminDb([/* flags rows */], [/* env rows */]), adminSession);
+    const app = makeApp(
+      adminService({ getFlagsWithStates: async () => ({ flags: [], environments: [] }) }),
+      adminSession,
+    );
     const res = await app.fetch(new Request(`${BASE}/flags`));
     expect(res.status).toBe(200);
   });
 });
 
-// ── Org middleware ──────────────────────────────────────────────────────────
+// ── Org middleware ───────────────────────────────────────────────────────────
 
 describe('org middleware', () => {
   it('returns 404 when org slug not found', async () => {
-    const app = makeApp(makeMockDb([[/* no org */]]), adminSession);
+    const app = makeApp(
+      makeMockService({ resolveOrgContext: async () => null }),
+      adminSession,
+    );
     const res = await app.fetch(new Request('http://localhost/api/dashboard/nonexistent/flags'));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'Organization not found' });
@@ -104,25 +119,31 @@ describe('org middleware', () => {
 
   it('returns 403 when org is suspended', async () => {
     const suspended = { ...ORG, status: 'suspended' };
-    const app = makeApp(makeMockDb([[suspended]]), adminSession);
+    const app = makeApp(
+      makeMockService({ resolveOrgContext: async () => ({ org: suspended, role: 'admin' }) }),
+      adminSession,
+    );
     const res = await app.fetch(new Request(`${BASE}/flags`));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'Organization suspended' });
   });
 
   it('returns 403 when user is not a member', async () => {
-    const app = makeApp(makeMockDb([[ORG], [/* no membership */]]), adminSession);
+    const app = makeApp(
+      makeMockService({ resolveOrgContext: async () => ({ org: ORG, role: null }) }),
+      adminSession,
+    );
     const res = await app.fetch(new Request(`${BASE}/flags`));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'Not a member of this organization' });
   });
 });
 
-// ── GET /api/dashboard/:orgSlug/context ────────────────────────────────────
+// ── GET /api/dashboard/:orgSlug/context ─────────────────────────────────────
 
 describe('GET /api/dashboard/:orgSlug/context', () => {
   it('returns org info and user role', async () => {
-    const app = makeApp(adminDb(), adminSession);
+    const app = makeApp(adminService(), adminSession);
     const res = await app.fetch(new Request(`${BASE}/context`));
     expect(res.status).toBe(200);
     const body = await res.json() as { org: { slug: string }; role: string };
@@ -131,20 +152,17 @@ describe('GET /api/dashboard/:orgSlug/context', () => {
   });
 });
 
-// ── GET /api/dashboard/:orgSlug/flags ──────────────────────────────────────
+// ── GET /api/dashboard/:orgSlug/flags ───────────────────────────────────────
 
 describe('GET /api/dashboard/:orgSlug/flags', () => {
   it('returns flags and environments', async () => {
-    const flagRows = [
-      { id: 'f1', name: 'My Flag', key: 'my-flag', description: '', createdAt: new Date('2026-01-01'), envSlug: 'prod', enabled: true },
-      { id: 'f1', name: 'My Flag', key: 'my-flag', description: '', createdAt: new Date('2026-01-01'), envSlug: 'staging', enabled: false },
-    ];
-    const envRows = [
-      { id: 'e1', name: 'Production', slug: 'prod' },
-      { id: 'e2', name: 'Staging', slug: 'staging' },
-    ];
+    const flags = [{ id: 'f1', name: 'My Flag', key: 'my-flag', description: '', createdAt: new Date(), states: { prod: true, staging: false } }];
+    const environments = [{ id: 'e1', name: 'Production', slug: 'prod' }, { id: 'e2', name: 'Staging', slug: 'staging' }];
 
-    const app = makeApp(adminDb(flagRows, envRows), adminSession);
+    const app = makeApp(
+      adminService({ getFlagsWithStates: async () => ({ flags, environments }) }),
+      adminSession,
+    );
     const res = await app.fetch(new Request(`${BASE}/flags`));
     expect(res.status).toBe(200);
 
@@ -154,17 +172,20 @@ describe('GET /api/dashboard/:orgSlug/flags', () => {
   });
 
   it('is accessible to viewers', async () => {
-    const app = makeApp(viewerDb([], []), viewerSession);
+    const app = makeApp(
+      viewerService({ getFlagsWithStates: async () => ({ flags: [], environments: [] }) }),
+      viewerSession,
+    );
     const res = await app.fetch(new Request(`${BASE}/flags`));
     expect(res.status).toBe(200);
   });
 });
 
-// ── POST /api/dashboard/:orgSlug/flags ─────────────────────────────────────
+// ── POST /api/dashboard/:orgSlug/flags ──────────────────────────────────────
 
 describe('POST /api/dashboard/:orgSlug/flags', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/flags`, {
         method: 'POST',
@@ -176,7 +197,7 @@ describe('POST /api/dashboard/:orgSlug/flags', () => {
   });
 
   it('returns 400 when name is missing', async () => {
-    const app = makeApp(adminDb(), adminSession);
+    const app = makeApp(adminService(), adminSession);
     const res = await app.fetch(
       new Request(`${BASE}/flags`, {
         method: 'POST',
@@ -188,9 +209,11 @@ describe('POST /api/dashboard/:orgSlug/flags', () => {
   });
 
   it('creates a flag and returns 201', async () => {
-    const created = { id: 'f-new', name: 'Beta', key: 'beta', description: '', createdAt: new Date() };
-    // select envs → [e1]; insert flag → returning [created]; insert flagStates.onConflictDoNothing → []
-    const app = makeApp(adminDb([{ id: 'e1' }], [created], []), adminSession);
+    const created = { id: 'f-new', orgId: 'org-1', name: 'Beta', key: 'beta', description: '', createdAt: new Date() };
+    const app = makeApp(
+      adminService({ createFlag: async () => created }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/flags`, {
         method: 'POST',
@@ -204,8 +227,11 @@ describe('POST /api/dashboard/:orgSlug/flags', () => {
   });
 
   it('auto-slugifies name into key', async () => {
-    const created = { id: 'f2', name: 'My Feature', key: 'my-feature', description: '', createdAt: new Date() };
-    const app = makeApp(adminDb([{ id: 'e1' }], [created], []), adminSession);
+    const created = { id: 'f2', orgId: 'org-1', name: 'My Feature', key: 'my-feature', description: '', createdAt: new Date() };
+    const app = makeApp(
+      adminService({ createFlag: async () => created }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/flags`, {
         method: 'POST',
@@ -217,11 +243,11 @@ describe('POST /api/dashboard/:orgSlug/flags', () => {
   });
 });
 
-// ── PATCH /api/dashboard/:orgSlug/flags/:key ───────────────────────────────
+// ── PATCH /api/dashboard/:orgSlug/flags/:key ────────────────────────────────
 
 describe('PATCH /api/dashboard/:orgSlug/flags/:key', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/flags/my-flag`, {
         method: 'PATCH',
@@ -233,7 +259,10 @@ describe('PATCH /api/dashboard/:orgSlug/flags/:key', () => {
   });
 
   it('returns 404 when flag not found', async () => {
-    const app = makeApp(adminDb([]), adminSession);
+    const app = makeApp(
+      adminService({ updateFlag: async () => { throw new NotFoundError('Flag not found'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/flags/nonexistent`, {
         method: 'PATCH',
@@ -245,8 +274,11 @@ describe('PATCH /api/dashboard/:orgSlug/flags/:key', () => {
   });
 
   it('updates flag and returns 200', async () => {
-    const updated = { id: 'f1', name: 'New Name', key: 'my-flag', description: '', createdAt: new Date() };
-    const app = makeApp(adminDb([updated]), adminSession);
+    const updated = { id: 'f1', orgId: 'org-1', name: 'New Name', key: 'my-flag', description: '', createdAt: new Date() };
+    const app = makeApp(
+      adminService({ updateFlag: async () => updated }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/flags/my-flag`, {
         method: 'PATCH',
@@ -260,11 +292,11 @@ describe('PATCH /api/dashboard/:orgSlug/flags/:key', () => {
   });
 });
 
-// ── DELETE /api/dashboard/:orgSlug/flags/:key ──────────────────────────────
+// ── DELETE /api/dashboard/:orgSlug/flags/:key ───────────────────────────────
 
 describe('DELETE /api/dashboard/:orgSlug/flags/:key', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/flags/my-flag`, { method: 'DELETE' }),
     );
@@ -272,7 +304,10 @@ describe('DELETE /api/dashboard/:orgSlug/flags/:key', () => {
   });
 
   it('returns 404 when flag not found', async () => {
-    const app = makeApp(adminDb([]), adminSession);
+    const app = makeApp(
+      adminService({ deleteFlag: async () => { throw new NotFoundError('Flag not found'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/flags/nonexistent`, { method: 'DELETE' }),
     );
@@ -280,7 +315,10 @@ describe('DELETE /api/dashboard/:orgSlug/flags/:key', () => {
   });
 
   it('deletes flag and returns 204', async () => {
-    const app = makeApp(adminDb([{ id: 'f1' }]), adminSession);
+    const app = makeApp(
+      adminService({ deleteFlag: async () => undefined }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/flags/my-flag`, { method: 'DELETE' }),
     );
@@ -288,11 +326,11 @@ describe('DELETE /api/dashboard/:orgSlug/flags/:key', () => {
   });
 });
 
-// ── POST /api/dashboard/:orgSlug/flags/:key/toggle ─────────────────────────
+// ── POST /api/dashboard/:orgSlug/flags/:key/toggle ──────────────────────────
 
 describe('POST /api/dashboard/:orgSlug/flags/:key/toggle', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/flags/my-flag/toggle`, {
         method: 'POST',
@@ -304,7 +342,7 @@ describe('POST /api/dashboard/:orgSlug/flags/:key/toggle', () => {
   });
 
   it('returns 400 when environmentId is missing', async () => {
-    const app = makeApp(adminDb(), adminSession);
+    const app = makeApp(adminService(), adminSession);
     const res = await app.fetch(
       new Request(`${BASE}/flags/my-flag/toggle`, {
         method: 'POST',
@@ -316,7 +354,10 @@ describe('POST /api/dashboard/:orgSlug/flags/:key/toggle', () => {
   });
 
   it('returns 404 when flag not found', async () => {
-    const app = makeApp(adminDb([/* no flag */]), adminSession);
+    const app = makeApp(
+      adminService({ toggleFlag: async () => { throw new NotFoundError('Flag not found'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/flags/gone/toggle`, {
         method: 'POST',
@@ -328,8 +369,10 @@ describe('POST /api/dashboard/:orgSlug/flags/:key/toggle', () => {
   });
 
   it('toggles and returns new enabled state', async () => {
-    // select flag → [{ id: 'f1' }]; insert/upsert flagState → [{ enabled: true }]
-    const app = makeApp(adminDb([{ id: 'f1' }], [{ enabled: true }]), adminSession);
+    const app = makeApp(
+      adminService({ toggleFlag: async () => ({ enabled: true }) }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/flags/my-flag/toggle`, {
         method: 'POST',
@@ -343,12 +386,15 @@ describe('POST /api/dashboard/:orgSlug/flags/:key/toggle', () => {
   });
 });
 
-// ── GET /api/dashboard/:orgSlug/environments ───────────────────────────────
+// ── GET /api/dashboard/:orgSlug/environments ────────────────────────────────
 
 describe('GET /api/dashboard/:orgSlug/environments', () => {
   it('returns environments list', async () => {
     const envRows = [{ id: 'e1', name: 'Prod', slug: 'prod', allowedOrigins: [], createdAt: new Date(), keyHint: 'sdk-ab…ef' }];
-    const app = makeApp(adminDb(envRows), adminSession);
+    const app = makeApp(
+      adminService({ getEnvironments: async () => envRows }),
+      adminSession,
+    );
     const res = await app.fetch(new Request(`${BASE}/environments`));
     expect(res.status).toBe(200);
     const body = await res.json() as { environments: unknown[] };
@@ -356,17 +402,20 @@ describe('GET /api/dashboard/:orgSlug/environments', () => {
   });
 
   it('is accessible to viewers', async () => {
-    const app = makeApp(viewerDb([]), viewerSession);
+    const app = makeApp(
+      viewerService({ getEnvironments: async () => [] }),
+      viewerSession,
+    );
     const res = await app.fetch(new Request(`${BASE}/environments`));
     expect(res.status).toBe(200);
   });
 });
 
-// ── POST /api/dashboard/:orgSlug/environments ──────────────────────────────
+// ── POST /api/dashboard/:orgSlug/environments ───────────────────────────────
 
 describe('POST /api/dashboard/:orgSlug/environments', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/environments`, {
         method: 'POST',
@@ -378,7 +427,10 @@ describe('POST /api/dashboard/:orgSlug/environments', () => {
   });
 
   it('returns 400 when name is missing', async () => {
-    const app = makeApp(adminDb(), adminSession);
+    const app = makeApp(
+      adminService({ createEnvironment: async () => { throw new PreconditionError('Invalid name'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/environments`, {
         method: 'POST',
@@ -390,9 +442,11 @@ describe('POST /api/dashboard/:orgSlug/environments', () => {
   });
 
   it('creates environment and returns 201 with raw API key', async () => {
-    const created = { id: 'e-new', name: 'Staging', slug: 'staging', allowedOrigins: [], createdAt: new Date() };
-    // insert env → [created]; insert apiKeys → []; select flags → []
-    const app = makeApp(adminDb([created], [], []), adminSession);
+    const created = { id: 'e-new', orgId: 'org-1', name: 'Staging', slug: 'staging', allowedOrigins: [] as string[], createdAt: new Date() };
+    const app = makeApp(
+      adminService({ createEnvironment: async () => ({ environment: created, apiKey: 'sdk-abc123def456' }) }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/environments`, {
         method: 'POST',
@@ -407,11 +461,11 @@ describe('POST /api/dashboard/:orgSlug/environments', () => {
   });
 });
 
-// ── PATCH /api/dashboard/:orgSlug/environments/:id ─────────────────────────
+// ── PATCH /api/dashboard/:orgSlug/environments/:id ──────────────────────────
 
 describe('PATCH /api/dashboard/:orgSlug/environments/:id', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/environments/e1`, {
         method: 'PATCH',
@@ -423,7 +477,7 @@ describe('PATCH /api/dashboard/:orgSlug/environments/:id', () => {
   });
 
   it('returns 400 for invalid allowedOrigins', async () => {
-    const app = makeApp(adminDb(), adminSession);
+    const app = makeApp(adminService(), adminSession);
     const res = await app.fetch(
       new Request(`${BASE}/environments/e1`, {
         method: 'PATCH',
@@ -436,7 +490,10 @@ describe('PATCH /api/dashboard/:orgSlug/environments/:id', () => {
 
   it('updates allowedOrigins and returns 200', async () => {
     const updated = { id: 'e1', allowedOrigins: ['https://example.com'] };
-    const app = makeApp(adminDb([updated]), adminSession);
+    const app = makeApp(
+      adminService({ updateEnvironmentOrigins: async () => updated }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/environments/e1`, {
         method: 'PATCH',
@@ -450,11 +507,11 @@ describe('PATCH /api/dashboard/:orgSlug/environments/:id', () => {
   });
 });
 
-// ── DELETE /api/dashboard/:orgSlug/environments/:id ────────────────────────
+// ── DELETE /api/dashboard/:orgSlug/environments/:id ─────────────────────────
 
 describe('DELETE /api/dashboard/:orgSlug/environments/:id', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/environments/e1`, { method: 'DELETE' }),
     );
@@ -462,7 +519,10 @@ describe('DELETE /api/dashboard/:orgSlug/environments/:id', () => {
   });
 
   it('returns 404 when environment not found', async () => {
-    const app = makeApp(adminDb([]), adminSession);
+    const app = makeApp(
+      adminService({ deleteEnvironment: async () => { throw new NotFoundError('Environment not found'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/environments/gone`, { method: 'DELETE' }),
     );
@@ -470,7 +530,10 @@ describe('DELETE /api/dashboard/:orgSlug/environments/:id', () => {
   });
 
   it('deletes environment and returns 204', async () => {
-    const app = makeApp(adminDb([{ id: 'e1' }]), adminSession);
+    const app = makeApp(
+      adminService({ deleteEnvironment: async () => undefined }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/environments/e1`, { method: 'DELETE' }),
     );
@@ -478,11 +541,11 @@ describe('DELETE /api/dashboard/:orgSlug/environments/:id', () => {
   });
 });
 
-// ── POST /api/dashboard/:orgSlug/environments/:id/rotate-key ───────────────
+// ── POST /api/dashboard/:orgSlug/environments/:id/rotate-key ────────────────
 
 describe('POST /api/dashboard/:orgSlug/environments/:id/rotate-key', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/environments/e1/rotate-key`, { method: 'POST' }),
     );
@@ -490,7 +553,10 @@ describe('POST /api/dashboard/:orgSlug/environments/:id/rotate-key', () => {
   });
 
   it('returns 404 when environment not found', async () => {
-    const app = makeApp(adminDb([/* no env */]), adminSession);
+    const app = makeApp(
+      adminService({ rotateEnvironmentKey: async () => { throw new NotFoundError('Environment not found'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/environments/gone/rotate-key`, { method: 'POST' }),
     );
@@ -498,8 +564,10 @@ describe('POST /api/dashboard/:orgSlug/environments/:id/rotate-key', () => {
   });
 
   it('rotates key and returns new raw API key', async () => {
-    // select env → [{ id: 'e1' }]; delete → []; insert → []
-    const app = makeApp(adminDb([{ id: 'e1' }], [], []), adminSession);
+    const app = makeApp(
+      adminService({ rotateEnvironmentKey: async () => ({ apiKey: 'sdk-newkey123456789' }) }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/environments/e1/rotate-key`, { method: 'POST' }),
     );
@@ -509,18 +577,21 @@ describe('POST /api/dashboard/:orgSlug/environments/:id/rotate-key', () => {
   });
 });
 
-// ── GET /api/dashboard/:orgSlug/members ────────────────────────────────────
+// ── GET /api/dashboard/:orgSlug/members ─────────────────────────────────────
 
 describe('GET /api/dashboard/:orgSlug/members', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(new Request(`${BASE}/members`));
     expect(res.status).toBe(403);
   });
 
   it('returns members list for admin', async () => {
     const members = [{ id: 'u1', name: 'Alice', email: 'alice@example.com', role: 'admin', createdAt: new Date() }];
-    const app = makeApp(adminDb(members), adminSession);
+    const app = makeApp(
+      adminService({ getMembers: async () => members }),
+      adminSession,
+    );
     const res = await app.fetch(new Request(`${BASE}/members`));
     expect(res.status).toBe(200);
     const body = await res.json() as { members: unknown[] };
@@ -528,11 +599,11 @@ describe('GET /api/dashboard/:orgSlug/members', () => {
   });
 });
 
-// ── PATCH /api/dashboard/:orgSlug/members/:userId ──────────────────────────
+// ── PATCH /api/dashboard/:orgSlug/members/:userId ───────────────────────────
 
 describe('PATCH /api/dashboard/:orgSlug/members/:userId', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/members/u1`, {
         method: 'PATCH',
@@ -544,7 +615,10 @@ describe('PATCH /api/dashboard/:orgSlug/members/:userId', () => {
   });
 
   it('returns 400 for invalid role', async () => {
-    const app = makeApp(adminDb(), adminSession);
+    const app = makeApp(
+      adminService({ updateMemberRole: async () => { throw new PreconditionError('Role must be admin or viewer'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/members/u1`, {
         method: 'PATCH',
@@ -556,8 +630,10 @@ describe('PATCH /api/dashboard/:orgSlug/members/:userId', () => {
   });
 
   it('returns 409 when demoting the last admin', async () => {
-    // last-admin check: no other admins
-    const app = makeApp(adminDb([{ userId: 'u-admin' }], []), adminSession);
+    const app = makeApp(
+      adminService({ updateMemberRole: async () => { throw new ConflictError('Cannot demote the last admin'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/members/u-admin`, {
         method: 'PATCH',
@@ -570,9 +646,10 @@ describe('PATCH /api/dashboard/:orgSlug/members/:userId', () => {
   });
 
   it('updates role and returns 200 when another admin exists', async () => {
-    // last-admin check: two admins exist, so we can demote
-    const updated = { userId: 'u1', role: 'viewer' };
-    const app = makeApp(adminDb([{ userId: 'u-admin' }, { userId: 'u1' }], [updated]), adminSession);
+    const app = makeApp(
+      adminService({ updateMemberRole: async () => ({ userId: 'u1', role: 'viewer' }) }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/members/u1`, {
         method: 'PATCH',
@@ -586,11 +663,11 @@ describe('PATCH /api/dashboard/:orgSlug/members/:userId', () => {
   });
 });
 
-// ── DELETE /api/dashboard/:orgSlug/members/:userId ─────────────────────────
+// ── DELETE /api/dashboard/:orgSlug/members/:userId ──────────────────────────
 
 describe('DELETE /api/dashboard/:orgSlug/members/:userId', () => {
   it('returns 403 for viewer', async () => {
-    const app = makeApp(viewerDb(), viewerSession);
+    const app = makeApp(viewerService(), viewerSession);
     const res = await app.fetch(
       new Request(`${BASE}/members/u1`, { method: 'DELETE' }),
     );
@@ -598,8 +675,10 @@ describe('DELETE /api/dashboard/:orgSlug/members/:userId', () => {
   });
 
   it('returns 404 when member not found', async () => {
-    // membership lookup → empty
-    const app = makeApp(adminDb([/* empty membership */]), adminSession);
+    const app = makeApp(
+      adminService({ removeMember: async () => { throw new NotFoundError('Member not found'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/members/gone`, { method: 'DELETE' }),
     );
@@ -607,8 +686,10 @@ describe('DELETE /api/dashboard/:orgSlug/members/:userId', () => {
   });
 
   it('returns 409 when removing the last admin', async () => {
-    // membership → [{ role: 'admin' }]; admins list → [{ userId: 'u1' }] (only 1)
-    const app = makeApp(adminDb([{ role: 'admin' }], [{ userId: 'u1' }]), adminSession);
+    const app = makeApp(
+      adminService({ removeMember: async () => { throw new ConflictError('Cannot remove the last admin'); } }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/members/u1`, { method: 'DELETE' }),
     );
@@ -617,8 +698,10 @@ describe('DELETE /api/dashboard/:orgSlug/members/:userId', () => {
   });
 
   it('removes member and returns 204', async () => {
-    // membership → [{ role: 'viewer' }]; delete (no returning needed — awaited via .then)
-    const app = makeApp(adminDb([{ role: 'viewer' }], []), adminSession);
+    const app = makeApp(
+      adminService({ removeMember: async () => undefined }),
+      adminSession,
+    );
     const res = await app.fetch(
       new Request(`${BASE}/members/u1`, { method: 'DELETE' }),
     );
