@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { eq } from 'drizzle-orm';
-import { organizations, authUser } from '@vexillo/db';
+import { organizations, authUser, organizationMembers } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import type { Auth } from '../lib/auth';
+import { decryptSecret } from '../lib/okta-crypto';
 
 // ── PKCE helpers ──────────────────────────────────────────────────────────────
 
@@ -311,9 +312,16 @@ export function createOrgOAuthRouter(db: DbClient, auth: Auth) {
     const baseUrl = process.env.BETTER_AUTH_URL!;
     const callbackUrl = `${baseUrl}/api/auth/org-oauth/callback`;
 
+    let oktaClientSecret: string;
+    try {
+      oktaClientSecret = await decryptSecret(org.oktaClientSecret);
+    } catch {
+      return fail('okta_config_error');
+    }
+
     const tokens = await exchangeCode(
       org.oktaClientId,
-      org.oktaClientSecret,
+      oktaClientSecret,
       code,
       parsed.codeVerifier,
       callbackUrl,
@@ -358,13 +366,13 @@ export function createOrgOAuthRouter(db: DbClient, auth: Auth) {
       await db.update(authUser).set({ isSuperAdmin: true }).where(eq(authUser.id, userId));
     }
 
-    // Super admins go to /admin; everyone else goes to the requested next URL.
-    // Covers: (a) just-promoted via email match, (b) pre-existing super admin.
-    const existingIsSuperAdmin =
-      existing != null &&
-      (existing.user as Record<string, unknown>).isSuperAdmin === true;
-    const redirectTarget =
-      emailMatchesSuperAdmin || existingIsSuperAdmin ? '/admin' : parsed.next || '/';
+    // JIT provisioning — add user to org on first sign-in (idempotent)
+    await db
+      .insert(organizationMembers)
+      .values({ orgId: org.id, userId, role: 'viewer' })
+      .onConflictDoNothing();
+
+    const redirectTarget = parsed.next || '/';
 
     // Create BetterAuth session
     const session = await ctx.internalAdapter.createSession(userId);

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp, primaryKey, unique } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, boolean, timestamp, primaryKey, unique, jsonb, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // ── Organizations ─────────────────────────────────────────────────────────────
@@ -126,3 +126,19 @@ export const apiKeys = pgTable('api_keys', {
   keyHint: text('key_hint').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ── Audit log ─────────────────────────────────────────────────────────────────
+
+export const auditLogs = pgTable('audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  actorId: text('actor_id').notNull().references(() => authUser.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(),       // e.g. 'flag.toggle', 'flag.create', 'member.remove'
+  targetType: text('target_type').notNull(), // 'flag' | 'environment' | 'member' | 'apiKey'
+  targetId: text('target_id').notNull(),
+  metadata: jsonb('metadata'),            // before/after values or relevant context
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('audit_logs_org_id_idx').on(table.orgId),
+  index('audit_logs_actor_id_idx').on(table.actorId),
+]);

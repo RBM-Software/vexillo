@@ -25,9 +25,8 @@ Run these from the repo root with `pnpm --filter @vexillo/db <script>`.
 
 | Table | Description |
 |-------|-------------|
-| `organizations` | Tenants — name, slug, Okta OAuth config, status (`active` / `suspended`) |
+| `organizations` | Tenants — name, slug, Okta OAuth config (client secret stored AES-256-GCM encrypted), status (`active` / `suspended`) |
 | `organization_members` | Per-org RBAC — links users to orgs with a role (`admin` / `viewer`) |
-| `invites` | Email invitations — token hash, expiry, accepted timestamp |
 
 **Auth (BetterAuth managed)**
 
@@ -46,6 +45,12 @@ Run these from the repo root with `pnpm --filter @vexillo/db <script>`.
 | `flags` | Feature flag definitions per org |
 | `flag_states` | Enabled/disabled state per flag per environment |
 | `api_keys` | Hashed API keys for SDK access, scoped to an environment |
+
+**Audit**
+
+| Table | Description |
+|-------|-------------|
+| `audit_logs` | Immutable audit trail of all dashboard mutations — actor, action, target, metadata |
 
 ## Usage
 

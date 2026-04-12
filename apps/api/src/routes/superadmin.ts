@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { eq, desc, count } from 'drizzle-orm';
 import { organizations, organizationMembers, authUser } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
-import type { GetSession, Session } from './dashboard';
+import type { GetSession, Session } from '../lib/session';
+import { encryptSecret, decryptSecret } from '../lib/okta-crypto';
 
 type Variables = {
   session: Session;
@@ -63,9 +64,9 @@ export function createSuperAdminRouter(db: DbClient, getSession: GetSession) {
     try {
       const [org] = await db
         .insert(organizations)
-        .values({ name, slug, oktaClientId, oktaClientSecret, oktaIssuer })
+        .values({ name, slug, oktaClientId, oktaClientSecret: await encryptSecret(oktaClientSecret), oktaIssuer })
         .returning();
-      return c.json({ org }, 201);
+      return c.json({ org: { ...org, oktaClientSecret } }, 201);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('unique') || msg.includes('duplicate')) {
@@ -90,23 +91,27 @@ export function createSuperAdminRouter(db: DbClient, getSession: GetSession) {
       .from(organizationMembers)
       .where(eq(organizationMembers.orgId, org.id));
 
-    return c.json({ org: { ...org, memberCount: countRow?.memberCount ?? 0 } });
+    return c.json({
+      org: {
+        ...org,
+        oktaClientSecret: await decryptSecret(org.oktaClientSecret),
+        memberCount: countRow?.memberCount ?? 0,
+      },
+    });
   });
 
-  // PATCH /api/superadmin/orgs/:slug — update org name, slug, or Okta config
+  // PATCH /api/superadmin/orgs/:slug — update org name or Okta config (slug is immutable)
   router.patch('/orgs/:slug', async (c) => {
     const slug = c.req.param('slug');
     const body = await c.req.json();
 
     const updates: Partial<typeof organizations.$inferInsert> = {};
     if (body.name !== undefined) updates.name = body.name.trim();
-    if (body.slug !== undefined) updates.slug = body.slug.trim();
     if (body.oktaClientId !== undefined) updates.oktaClientId = body.oktaClientId.trim();
-    if (body.oktaClientSecret !== undefined) updates.oktaClientSecret = body.oktaClientSecret.trim();
+    if (body.oktaClientSecret !== undefined) updates.oktaClientSecret = await encryptSecret(body.oktaClientSecret.trim());
     if (body.oktaIssuer !== undefined) updates.oktaIssuer = body.oktaIssuer.trim();
 
     if (updates.name === '') return c.json({ error: 'Name cannot be empty' }, 400);
-    if (updates.slug === '') return c.json({ error: 'Slug cannot be empty' }, 400);
     if (Object.keys(updates).length === 0) return c.json({ error: 'No fields to update' }, 400);
 
     try {
@@ -116,7 +121,8 @@ export function createSuperAdminRouter(db: DbClient, getSession: GetSession) {
         .where(eq(organizations.slug, slug))
         .returning();
       if (result.length === 0) return c.json({ error: 'Organization not found' }, 404);
-      return c.json({ org: result[0] });
+      const org = result[0];
+      return c.json({ org: { ...org, oktaClientSecret: await decryptSecret(org.oktaClientSecret) } });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('unique') || msg.includes('duplicate')) {

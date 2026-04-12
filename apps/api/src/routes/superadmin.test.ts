@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeAll } from 'bun:test';
 import { Hono } from 'hono';
 import { createSuperAdminRouter } from './superadmin';
 import type { GetSession, Session } from './dashboard';
+import { encryptSecret } from '../lib/okta-crypto';
+
+// Fixed test key — 64 hex chars = 32 bytes
+process.env.OKTA_SECRET_KEY = 'a'.repeat(64);
 
 // ── Mock helpers ─────────────────────────────────────────────────────────────
 
@@ -51,7 +55,8 @@ function makeApp(db: Parameters<typeof createSuperAdminRouter>[0], getSession: G
 
 const BASE = 'http://localhost/api/superadmin';
 
-const ORG = {
+// Base org with plaintext secret — used in tests that never call decryptSecret.
+const ORG_PLAIN = {
   id: 'org-1',
   name: 'Acme',
   slug: 'acme',
@@ -61,6 +66,14 @@ const ORG = {
   oktaIssuer: 'https://acme.okta.com',
   createdAt: new Date(),
 };
+
+// ORG with an encrypted secret — used in tests where the route calls decryptSecret
+// (GET detail, PATCH). Populated in beforeAll.
+let ORG: typeof ORG_PLAIN;
+
+beforeAll(async () => {
+  ORG = { ...ORG_PLAIN, oktaClientSecret: await encryptSecret('okta-secret') };
+});
 
 // ── Auth middleware ──────────────────────────────────────────────────────────
 
@@ -80,7 +93,7 @@ describe('superadmin auth middleware', () => {
   });
 
   it('allows super-admin through', async () => {
-    const app = makeApp(makeMockDb([[ORG]]), superSession);
+    const app = makeApp(makeMockDb([[ORG_PLAIN]]), superSession);
     const res = await app.fetch(new Request(`${BASE}/orgs`));
     expect(res.status).toBe(200);
   });
@@ -98,7 +111,7 @@ describe('GET /api/superadmin/orgs', () => {
   });
 
   it('returns list of orgs', async () => {
-    const app = makeApp(makeMockDb([[ORG]]), superSession);
+    const app = makeApp(makeMockDb([[ORG_PLAIN]]), superSession);
     const res = await app.fetch(new Request(`${BASE}/orgs`));
     expect(res.status).toBe(200);
     const body = await res.json() as { orgs: unknown[] };
@@ -174,7 +187,7 @@ describe('POST /api/superadmin/orgs', () => {
   });
 
   it('creates org and returns 201', async () => {
-    const created = { ...ORG, id: 'org-new' };
+    const created = { ...ORG_PLAIN, id: 'org-new' };
     const app = makeApp(makeMockDb([[created]]), superSession);
     const res = await app.fetch(new Request(`${BASE}/orgs`, {
       method: 'POST',
@@ -193,7 +206,7 @@ describe('POST /api/superadmin/orgs', () => {
   });
 
   it('auto-derives slug from name', async () => {
-    const created = { ...ORG, name: 'My Company', slug: 'my-company', id: 'org-new' };
+    const created = { ...ORG_PLAIN, name: 'My Company', slug: 'my-company', id: 'org-new' };
     const app = makeApp(makeMockDb([[created]]), superSession);
     const res = await app.fetch(new Request(`${BASE}/orgs`, {
       method: 'POST',
@@ -275,7 +288,7 @@ describe('PATCH /api/superadmin/orgs/:slug', () => {
   });
 
   it('updates org name and returns 200', async () => {
-    const updated = { ...ORG, name: 'Acme Corp' };
+    const updated = { ...ORG, name: 'Acme Corp' }; // ORG has encrypted secret
     const app = makeApp(makeMockDb([[updated]]), superSession);
     const res = await app.fetch(new Request(`${BASE}/orgs/acme`, {
       method: 'PATCH',

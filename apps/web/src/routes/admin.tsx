@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
-import { Flag } from 'lucide-react'
+import { Flag, ArrowLeft } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ModeToggle } from '@/components/mode-toggle'
 import { SignOutButton } from '@/components/sign-out-button'
@@ -39,6 +39,13 @@ export function AdminLayout() {
           >
             super admin
           </Badge>
+          <Link
+            to="/"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Workspace
+          </Link>
           <ModeToggle />
           <SignOutButton className="text-muted-foreground text-sm" />
         </div>

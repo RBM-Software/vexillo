@@ -11,7 +11,6 @@ import { AdminOrgsPage } from './routes/admin/index'
 import { AdminOrgsNewPage } from './routes/admin/orgs.new'
 import { AdminOrgDetailPage } from './routes/admin/orgs.$slug'
 import { AdminUsersPage } from './routes/admin/users'
-import { InviteAcceptPage } from './routes/invite'
 import { OrgSignInPage } from './routes/org-sign-in'
 import { authClient } from '@/lib/auth-client'
 import type { OrgInfo } from '@/lib/org-context'
@@ -21,24 +20,14 @@ const rootRoute = createRootRoute({
   component: RootLayout,
 })
 
-// Public: /invite — accept an org invite via token
-const inviteRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/invite',
-  component: InviteAcceptPage,
-})
-
 // Public: / — "find your workspace" slug entry form
-// Redirects super-admins straight to /admin, org members to their org
+// Home: / — workspace picker; single-org users go straight to their org
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: async () => {
     const { data: session } = await authClient.getSession()
     if (!session) return
-    if ((session?.user as Record<string, unknown>)?.isSuperAdmin === true) {
-      throw redirect({ to: '/admin' })
-    }
     const res = await fetch('/api/dashboard/me/orgs')
     if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
       const { orgs } = await res.json() as { orgs: { slug: string }[] }
@@ -162,7 +151,6 @@ const adminUsersRoute = createRoute({
 })
 
 export const routeTree = rootRoute.addChildren([
-  inviteRoute,
   indexRoute,
   orgSignInRoute,
   orgRoute.addChildren([flagsRoute, flagDetailRoute, environmentsRoute, membersRoute]),
