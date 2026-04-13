@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { eq } from 'drizzle-orm';
+import { eq, and, count } from 'drizzle-orm';
 import { organizations, authUser, organizationMembers } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import type { Auth } from '../lib/auth';
@@ -368,19 +368,31 @@ export function createOrgOAuthRouter(db: DbClient, auth: Auth) {
 
     // JIT provisioning — add user to org on first sign-in.
     // Super admins get admin role and are upgraded on every sign-in (upsert).
-    // Regular users are inserted as viewer only if not already a member.
+    // The first user to sign into an org gets admin (no one else can promote them).
+    // All subsequent regular users are inserted as viewer.
+    let role: string;
+    if (emailMatchesSuperAdmin) {
+      role = 'admin';
+    } else {
+      const [{ adminCount }] = await db
+        .select({ adminCount: count() })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, org.id), eq(organizationMembers.role, 'admin')));
+      role = adminCount === 0 ? 'admin' : 'viewer';
+    }
+
     if (emailMatchesSuperAdmin) {
       await db
         .insert(organizationMembers)
-        .values({ orgId: org.id, userId, role: 'admin' })
+        .values({ orgId: org.id, userId, role })
         .onConflictDoUpdate({
           target: [organizationMembers.orgId, organizationMembers.userId],
-          set: { role: 'admin' },
+          set: { role },
         });
     } else {
       await db
         .insert(organizationMembers)
-        .values({ orgId: org.id, userId, role: 'viewer' })
+        .values({ orgId: org.id, userId, role })
         .onConflictDoNothing();
     }
 
