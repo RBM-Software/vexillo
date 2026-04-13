@@ -1,74 +1,52 @@
-import { Link, Outlet, useRouterState } from '@tanstack/react-router'
-import { Flag, ArrowLeft } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { ModeToggle } from '@/components/mode-toggle'
-import { SignOutButton } from '@/components/sign-out-button'
+import { Outlet, useRouterState } from '@tanstack/react-router'
 
-const NAV_TABS = [
-  { label: 'Organizations', to: '/admin' as const, matchPrefix: '/admin/orgs' },
-  { label: 'Super Admins', to: '/admin/users' as const, matchPrefix: '/admin/users' },
-]
+import { AdminSidebar } from '@/components/admin-sidebar'
+import { ModeToggle } from '@/components/mode-toggle'
+import { Separator } from '@/components/ui/separator'
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from '@/components/ui/sidebar'
+
+function adminPageTitle(pathname: string): string {
+  if (pathname === '/admin/users' || pathname.startsWith('/admin/users')) {
+    return 'Administrators'
+  }
+  if (/^\/admin\/orgs\/[^/]+$/.test(pathname)) {
+    return 'Organization'
+  }
+  return 'Organizations'
+}
 
 export function AdminLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-
-  function isActive(to: string, matchPrefix: string) {
-    if (to === '/admin') {
-      return pathname === '/admin' || pathname.startsWith(matchPrefix)
-    }
-    return pathname === to || pathname.startsWith(matchPrefix)
-  }
+  const title = adminPageTitle(pathname)
 
   return (
-    <div className="min-h-dvh flex flex-col bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/80">
-        <div className="flex h-14 items-center gap-3 px-5 sm:px-8">
-          <Link
-            to="/admin"
-            className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity focus-visible:opacity-80 outline-none"
+    <SidebarProvider>
+      <AdminSidebar />
+      <SidebarInset className="min-h-dvh min-w-0">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur-sm supports-backdrop-filter:bg-background/80 sm:px-6">
+          <SidebarTrigger className="-ms-1" />
+          <div
+            className="min-w-0 flex-1 truncate font-heading text-[0.9375rem] font-medium tracking-[-0.015em] text-foreground sm:text-base"
+            title={title}
           >
-            <Flag className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-            <span className="font-heading text-[0.9375rem] font-medium tracking-[-0.015em]">
-              Vexillo
-            </span>
-          </Link>
-          <div className="flex-1" />
-          <Badge
-            variant="outline"
-            className="hidden text-[0.65rem] font-medium sm:inline-flex"
-          >
-            super admin
-          </Badge>
-          <Link
-            to="/"
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Workspace
-          </Link>
-          <ModeToggle />
-          <SignOutButton className="text-muted-foreground text-sm" />
-        </div>
-        <nav className="flex gap-1 px-5 sm:px-8 -mb-px">
-          {NAV_TABS.map((tab) => (
-            <Link
-              key={tab.to}
-              to={tab.to}
-              className={[
-                'px-1 py-2.5 text-sm border-b-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm',
-                isActive(tab.to, tab.matchPrefix)
-                  ? 'border-foreground text-foreground font-medium'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              ].join(' ')}
-            >
-              {tab.label}
-            </Link>
-          ))}
-        </nav>
-      </header>
-      <main className="main-canvas flex-1">
-        <Outlet />
-      </main>
-    </div>
+            {title}
+          </div>
+          <Separator orientation="vertical" className="h-6" />
+          <div className="flex shrink-0 items-center gap-2">
+            <ModeToggle />
+          </div>
+        </header>
+        <main
+          id="main-content"
+          className="main-canvas relative flex min-h-0 min-w-0 flex-1 flex-col bg-muted/35 dark:bg-muted/10"
+        >
+          <Outlet />
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

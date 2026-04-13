@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { Link, useParams, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, Building2 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -140,7 +141,7 @@ export function AdminOrgDetailPage() {
     load()
   }, [load])
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleSave(e: FormEvent) {
     e.preventDefault()
     if (!org) return
     setSaving(true)
@@ -207,11 +208,34 @@ export function AdminOrgDetailPage() {
 
   if (loading) {
     return (
-      <div className="page-container page-container-narrow">
-        <Skeleton className="h-4 w-36 mb-8" />
-        <div className="space-y-3">
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="h-4 w-32" />
+      <div className="page-container page-container-wide page-enter">
+        <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <Skeleton className="mb-1.5 h-3 w-20" />
+            <Skeleton className="h-8 w-72 max-w-full md:h-9" />
+            <Skeleton className="mt-2 h-4 w-full max-w-lg" />
+            <div className="mt-3 flex gap-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          </div>
+          <Skeleton className="h-10 w-44 shrink-0 rounded-md" />
+        </div>
+        <div className="table-shell divide-y divide-border">
+          <div className="border-b border-border bg-muted/45 px-5 py-3 dark:bg-muted/15">
+            <Skeleton className="h-3 w-40" />
+          </div>
+          <div className="space-y-4 px-5 py-5 sm:px-6">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <div className="border-b border-border bg-muted/45 px-5 py-3 dark:bg-muted/15">
+            <Skeleton className="h-3 w-36" />
+          </div>
+          <div className="space-y-4 px-5 py-5 sm:px-6">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
         </div>
       </div>
     )
@@ -219,148 +243,165 @@ export function AdminOrgDetailPage() {
 
   if (error || !org) {
     return (
-      <div className="page-container page-container-narrow">
-        <Link
-          to="/admin"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-8 outline-none"
+      <div className="page-container page-container-wide page-enter">
+        <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="page-eyebrow mb-1.5">Directory</p>
+            <h1 className="page-title">Organization</h1>
+            <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+              We couldn’t load this tenant.
+            </p>
+          </div>
+          <Link
+            to="/admin"
+            className={cn(
+              buttonVariants({ variant: 'outline', size: 'default' }),
+              'gap-2 shadow-surface-xs',
+            )}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to organizations
+          </Link>
+        </div>
+        <div
+          className="mb-8 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          role="alert"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to organizations
-        </Link>
-        <p className="text-sm text-destructive">{error ?? 'Organization not found'}</p>
+          {error ?? 'Organization not found'}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="page-container page-container-narrow page-enter">
-      <Link
-        to="/admin"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-8 focus-visible:underline outline-none"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back to organizations
-      </Link>
-
-      <div className="flex items-start gap-3 mb-8">
-        <Building2
-          className="h-5 w-5 text-muted-foreground mt-1 shrink-0"
-          strokeWidth={1.75}
-        />
-        <div className="min-w-0 flex-1">
-          <p className="page-eyebrow mb-1">Super admin</p>
-          <div className="flex items-center gap-2 flex-wrap">
+    <div className="page-container page-container-wide page-enter">
+      <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="page-eyebrow mb-1.5">Directory</p>
+          <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="page-title">{org.name}</h1>
             <Badge
               variant={org.status === 'suspended' ? 'destructive' : 'secondary'}
-              className="text-xs capitalize"
+              className="h-6 px-2 text-[0.6875rem] font-medium capitalize"
             >
               {org.status}
             </Badge>
           </div>
-          <div className="mt-1.5 flex items-center gap-3 flex-wrap">
-            <code className="text-[0.75rem] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm">
-              {org.slug}
-            </code>
-            <span className="text-[0.75rem] text-muted-foreground">
-              {org.memberCount} member{org.memberCount !== 1 ? 's' : ''}
-            </span>
-          </div>
+          <p className="data-table-mono-meta mt-1">{org.slug}</p>
+          <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+            Manage tenant identity, Okta settings, and lifecycle for this organization.
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {org.memberCount} member{org.memberCount !== 1 ? 's' : ''}
+          </p>
         </div>
+        <Link
+          to="/admin"
+          className={cn(
+            buttonVariants({ variant: 'outline', size: 'default' }),
+            'gap-2 shadow-surface-xs',
+          )}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to organizations
+        </Link>
       </div>
 
-      <div className="space-y-8">
-        {/* Edit form */}
-        <form onSubmit={handleSave} className="space-y-5">
-          <div className="surface-card px-5 py-5 sm:px-6 space-y-5">
-            <h2 className="text-[0.8125rem] font-semibold text-foreground">
-              Organization details
-            </h2>
+      <div className="space-y-6">
+        <form onSubmit={handleSave} className="space-y-6">
+          <div className="table-shell overflow-hidden">
+            <div className="border-b border-border bg-muted/45 px-5 py-3 dark:bg-muted/15">
+              <span className="data-table-th">Organization details</span>
+            </div>
+            <div className="space-y-4 px-5 py-5 sm:px-6">
+              <div className="space-y-1.5">
+                <Label htmlFor="org-name">Name</Label>
+                <Input
+                  id="org-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="org-name">Name</Label>
-              <Input
-                id="org-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
+              <div className="space-y-1.5">
+                <Label htmlFor="org-slug">Slug</Label>
+                <Input
+                  id="org-slug"
+                  value={editSlug}
+                  onChange={(e) => setEditSlug(e.target.value)}
+                  className="font-mono text-sm"
+                  required
+                />
+                <p className="text-[0.75rem] text-muted-foreground">
+                  Changing the slug will break existing bookmarks and URLs.
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="org-slug">Slug</Label>
-              <Input
-                id="org-slug"
-                value={editSlug}
-                onChange={(e) => setEditSlug(e.target.value)}
-                className="font-mono text-sm"
-                required
-              />
-              <p className="text-[0.75rem] text-muted-foreground">
-                Changing the slug will break existing bookmarks and URLs.
-              </p>
+            <div className="border-b border-border bg-muted/45 px-5 py-3 dark:bg-muted/15">
+              <span className="data-table-th">Okta configuration</span>
             </div>
-          </div>
+            <div className="space-y-4 px-5 py-5 sm:px-6">
+              <div className="space-y-1.5">
+                <Label htmlFor="okta-client-id">Client ID</Label>
+                <Input
+                  id="okta-client-id"
+                  value={oktaClientId}
+                  onChange={(e) => setOktaClientId(e.target.value)}
+                  className="font-mono text-sm"
+                  required
+                />
+              </div>
 
-          <div className="surface-card px-5 py-5 sm:px-6 space-y-5">
-            <h2 className="text-[0.8125rem] font-semibold text-foreground">
-              Okta configuration
-            </h2>
+              <div className="space-y-1.5">
+                <Label htmlFor="okta-client-secret">Client Secret</Label>
+                <Input
+                  id="okta-client-secret"
+                  type="password"
+                  value={oktaClientSecret}
+                  onChange={(e) => setOktaClientSecret(e.target.value)}
+                  required
+                  autoComplete="off"
+                />
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="okta-client-id">Client ID</Label>
-              <Input
-                id="okta-client-id"
-                value={oktaClientId}
-                onChange={(e) => setOktaClientId(e.target.value)}
-                className="font-mono text-sm"
-                required
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="okta-client-secret">Client Secret</Label>
-              <Input
-                id="okta-client-secret"
-                type="password"
-                value={oktaClientSecret}
-                onChange={(e) => setOktaClientSecret(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="okta-issuer">Issuer URL</Label>
-              <Input
-                id="okta-issuer"
-                value={oktaIssuer}
-                onChange={(e) => setOktaIssuer(e.target.value)}
-                className="font-mono text-sm"
-                required
-              />
+              <div className="space-y-1.5">
+                <Label htmlFor="okta-issuer">Issuer URL</Label>
+                <Input
+                  id="okta-issuer"
+                  value={oktaIssuer}
+                  onChange={(e) => setOktaIssuer(e.target.value)}
+                  className="font-mono text-sm"
+                  required
+                />
+              </div>
             </div>
           </div>
 
           <div>
-            <Button type="submit" disabled={saving}>
+            <Button
+              type="submit"
+              disabled={saving}
+              className="shadow-surface-xs"
+            >
               {saving ? 'Saving…' : 'Save changes'}
             </Button>
           </div>
         </form>
 
-        {/* Suspend / Unsuspend */}
-        <div className="surface-card px-5 py-5 sm:px-6">
-          <h2 className="text-[0.8125rem] font-semibold text-foreground mb-3">
-            Status
-          </h2>
-          <div className="flex items-center justify-between gap-4">
+        <div className="table-shell overflow-hidden">
+          <div className="border-b border-border bg-muted/45 px-5 py-3 dark:bg-muted/15">
+            <span className="data-table-th">Status</span>
+          </div>
+          <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
               <p className="text-sm font-medium text-foreground">
                 {org.status === 'suspended'
                   ? 'Unsuspend organization'
                   : 'Suspend organization'}
               </p>
-              <p className="text-[0.75rem] text-muted-foreground mt-0.5">
+              <p className="mt-0.5 text-[0.75rem] text-muted-foreground">
                 {org.status === 'suspended'
                   ? 'Restores member access and SDK functionality.'
                   : 'Blocks all member access and SDK requests immediately.'}
@@ -382,17 +423,18 @@ export function AdminOrgDetailPage() {
           </div>
         </div>
 
-        {/* Danger zone */}
-        <div className="surface-card px-5 py-5 sm:px-6">
-          <h2 className="text-[0.8125rem] font-semibold text-destructive mb-3">
-            Danger zone
-          </h2>
-          <div className="flex items-center justify-between gap-4">
+        <div className="table-shell overflow-hidden">
+          <div className="border-b border-border bg-muted/45 px-5 py-3 dark:bg-muted/15">
+            <span className={cn('data-table-th', 'text-destructive')}>
+              Danger zone
+            </span>
+          </div>
+          <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
               <p className="text-sm font-medium text-foreground">
                 Delete this organization
               </p>
-              <p className="text-[0.75rem] text-muted-foreground mt-0.5">
+              <p className="mt-0.5 text-[0.75rem] text-muted-foreground">
                 Permanently removes the organization, all flags, environments,
                 and members. This cannot be undone.
               </p>

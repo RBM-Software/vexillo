@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from '@tanstack/react-router'
-import { Building2, Plus, Trash2 } from 'lucide-react'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
+import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { AdminNewOrgDialog } from '@/components/admin-new-org-dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -96,10 +97,13 @@ function DeleteOrgDialog({
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export function AdminOrgsPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const [orgs, setOrgs] = useState<OrgRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<OrgRow | null>(null)
+  const [newOrgOpen, setNewOrgOpen] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -117,114 +121,148 @@ export function AdminOrgsPage() {
     load()
   }, [load])
 
+  useEffect(() => {
+    const q = new URLSearchParams(location.search)
+    const flag = q.get('newOrg')
+    if (flag === '1' || flag === 'true') {
+      setNewOrgOpen(true)
+      navigate({ to: '/admin', replace: true })
+    }
+  }, [location.search, navigate])
+
   function handleDeleted(slug: string) {
     setOrgs((prev) => prev.filter((o) => o.slug !== slug))
   }
 
   return (
     <div className="page-container page-container-wide page-enter">
-      <div className="flex items-start justify-between gap-4 mb-8">
-        <div className="flex items-center gap-3">
-          <Building2
-            className="h-5 w-5 text-muted-foreground mt-0.5"
-            strokeWidth={1.75}
-          />
-          <div>
-            <p className="page-eyebrow">Super admin</p>
-            <h1 className="page-title">Organizations</h1>
-          </div>
+      <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="page-eyebrow mb-1.5">Directory</p>
+          <h1 className="page-title">Organizations</h1>
+          <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+            Manage tenant workspaces, Okta settings, and lifecycle from one place.
+          </p>
         </div>
-        <Link to="/admin/orgs/new">
-          <Button size="sm" className="mt-1 shrink-0">
-            <Plus className="h-4 w-4" />
-            New organization
-          </Button>
-        </Link>
+        <Button
+          size="default"
+          className="gap-2 shadow-surface-xs"
+          onClick={() => setNewOrgOpen(true)}
+        >
+          <Plus className="h-4 w-4" />
+          New organization
+        </Button>
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive mb-6">
+        <div
+          className="mb-8 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
           {error}
         </div>
       )}
 
+      {/* Loading */}
       {loading && (
-        <div className="surface-card divide-y divide-border">
-          {[...Array(3)].map((_, i) => (
+        <div className="table-shell divide-y divide-border">
+          {[...Array(4)].map((_, i) => (
             <div key={i} className="flex items-center gap-4 px-5 py-4 sm:px-6">
               <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-36" />
                 <Skeleton className="h-3 w-24" />
               </div>
-              <Skeleton className="h-5 w-16 rounded-full" />
+              <Skeleton className="hidden h-5 w-16 rounded-full sm:block" />
+              <Skeleton className="hidden h-3.5 w-20 sm:block" />
+              <Skeleton className="h-8 w-8 rounded-md" />
             </div>
           ))}
         </div>
       )}
 
+      {/* Empty state */}
       {!loading && !error && orgs.length === 0 && (
-        <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Building2
-              className="h-5 w-5 text-muted-foreground"
-              strokeWidth={1.5}
-            />
-          </div>
-          <h2 className="text-base font-medium text-foreground mb-1">
+        <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center shadow-surface">
+          <p className="mb-1 text-base font-medium text-foreground">
             No organizations yet
-          </h2>
-          <p className="text-sm text-muted-foreground mb-6 max-w-xs">
-            Create an organization to onboard your first tenant.
           </p>
-          <Link to="/admin/orgs/new">
-            <Button size="sm">
-              <Plus className="h-4 w-4" />
-              Create organization
-            </Button>
-          </Link>
+          <p className="mb-8 max-w-sm text-sm text-muted-foreground">
+            Create an organization to onboard your first tenant and configure Okta.
+          </p>
+          <Button className="gap-2 shadow-surface-xs" onClick={() => setNewOrgOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Create organization
+          </Button>
         </div>
       )}
 
+      {/* List */}
       {!loading && !error && orgs.length > 0 && (
-        <div className="surface-card divide-y divide-border">
+        <div className="table-shell overflow-hidden">
+          <div className="hidden grid-cols-[1fr_6.5rem_7.5rem_2.5rem] gap-4 border-b border-border bg-muted/45 px-5 py-3 sm:grid dark:bg-muted/15">
+            <span className="data-table-th">Organization</span>
+            <span className="data-table-th">Status</span>
+            <span className="data-table-th">Created</span>
+            <span className="sr-only">Actions</span>
+          </div>
+
           {orgs.map((org) => (
             <div
               key={org.id}
-              className="flex items-center gap-4 px-5 py-4 sm:px-6"
+              className="data-table-body-row grid grid-cols-[1fr_auto] gap-4 border-b border-border px-5 py-4 last:border-0 sm:grid-cols-[1fr_6.5rem_7.5rem_2.5rem] sm:items-center sm:px-6"
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <Link
-                    to="/admin/orgs/$slug"
-                    params={{ slug: org.slug }}
-                    className="text-sm font-medium text-foreground hover:underline focus-visible:underline outline-none"
-                  >
-                    {org.name}
-                  </Link>
-                  <Badge
-                    variant={org.status === 'suspended' ? 'destructive' : 'secondary'}
-                    className="text-[0.65rem]"
-                  >
-                    {org.status}
-                  </Badge>
-                </div>
-                <p className="text-[0.75rem] text-muted-foreground font-mono mt-0.5">
+              <div className="min-w-0">
+                <Link
+                  to="/admin/orgs/$slug"
+                  params={{ slug: org.slug }}
+                  className="data-table-primary-label text-[0.9375rem] hover:underline focus-visible:underline"
+                >
+                  {org.name}
+                </Link>
+                <p className="data-table-mono-meta mt-0.5 text-[0.8125rem]">
                   {org.slug}
                 </p>
               </div>
-              <div className="shrink-0 flex items-center gap-3">
-                <span className="text-[0.75rem] text-muted-foreground hidden sm:inline">
-                  {new Date(org.createdAt).toLocaleDateString()}
-                </span>
+
+              <div className="hidden sm:flex sm:items-center">
+                <Badge
+                  variant={
+                    org.status === 'suspended' ? 'destructive' : 'secondary'
+                  }
+                  className="h-6 px-2 text-[0.6875rem] font-medium capitalize"
+                >
+                  {org.status}
+                </Badge>
+              </div>
+
+              <span className="hidden text-sm tabular-nums text-muted-foreground sm:block">
+                {new Date(org.createdAt).toLocaleDateString()}
+              </span>
+
+              <div className="flex justify-end sm:justify-start">
                 <Button
-                  size="sm"
-                  variant="outline"
+                  size="icon"
+                  variant="ghost"
                   onClick={() => setDeleteTarget(org)}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:border-destructive/50"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
                   aria-label={`Delete ${org.name}`}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </Button>
+              </div>
+
+              <div className="col-span-2 flex flex-wrap items-center gap-2 sm:hidden">
+                <Badge
+                  variant={
+                    org.status === 'suspended' ? 'destructive' : 'secondary'
+                  }
+                  className="h-6 px-2 text-[0.6875rem] font-medium capitalize"
+                >
+                  {org.status}
+                </Badge>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {new Date(org.createdAt).toLocaleDateString()}
+                </span>
               </div>
             </div>
           ))}
@@ -238,6 +276,8 @@ export function AdminOrgsPage() {
           onDeleted={handleDeleted}
         />
       )}
+
+      <AdminNewOrgDialog open={newOrgOpen} onOpenChange={setNewOrgOpen} />
     </div>
   )
 }

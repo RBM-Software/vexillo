@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Link, useParams } from '@tanstack/react-router'
-import { Flag, Plus, ChevronRight } from 'lucide-react'
+import { useState, useEffect, useCallback, type FormEvent } from 'react'
+import { Link } from '@tanstack/react-router'
+import { Plus, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -63,7 +63,7 @@ function CreateFlagDialog({
     setKeyEdited(true)
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
 
@@ -150,7 +150,11 @@ function CreateFlagDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !name.trim()}>
+            <Button
+              type="submit"
+              disabled={submitting || !name.trim()}
+              className="shadow-surface-xs"
+            >
               {submitting ? 'Creating…' : 'Create flag'}
             </Button>
           </DialogFooter>
@@ -178,52 +182,48 @@ function FlagTableRow({
   const enabledCount = environments.filter((e) => flag.states[e.slug]).length
 
   return (
-    <tr className="group border-b border-border last:border-0">
-      <td className="py-3.5 pl-5 pr-4 sm:pl-6">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <Link
-              to="/org/$slug/flags/$key"
-              params={{ slug: orgSlug, key: flag.key }}
-              className="font-medium text-foreground hover:underline focus-visible:underline outline-none"
-            >
-              {flag.name}
-            </Link>
-            <div className="mt-0.5 flex items-center gap-2">
-              <code className="text-[0.7rem] text-muted-foreground font-mono bg-muted px-1 py-0.5 rounded-sm">
-                {flag.key}
-              </code>
-              {environments.length > 0 && (
-                <span className="text-[0.7rem] text-muted-foreground">
-                  {enabledCount}/{environments.length} envs on
-                </span>
-              )}
-            </div>
-            {flag.description && (
-              <p className="mt-0.5 text-[0.8125rem] text-muted-foreground truncate max-w-xs">
-                {flag.description}
-              </p>
-            )}
-          </div>
+    <tr className="data-table-body-row group border-b border-border last:border-0">
+      <td className="py-4 pl-5 pr-4 align-middle sm:pl-6">
+        <div className="min-w-0">
+          <Link
+            to="/org/$slug/flags/$key"
+            params={{ slug: orgSlug, key: flag.key }}
+            className="data-table-primary-label hover:underline focus-visible:underline"
+          >
+            {flag.name}
+          </Link>
+          <p className="data-table-mono-meta mt-0.5">{flag.key}</p>
+          {environments.length > 0 && (
+            <p className="mt-0.5 text-[0.75rem] text-muted-foreground">
+              {enabledCount}/{environments.length} environments on
+            </p>
+          )}
+          {flag.description && (
+            <p className="mt-1 max-w-md truncate text-[0.8125rem] text-muted-foreground">
+              {flag.description}
+            </p>
+          )}
         </div>
       </td>
 
       {environments.map((env) => (
-        <td key={env.id} className="px-4 py-3.5 text-center">
-          <Switch
-            checked={!!flag.states[env.slug]}
-            onCheckedChange={() => onToggle(flag.key, env.id, env.slug)}
-            disabled={!isAdmin}
-            aria-label={`${flag.name} in ${env.name}`}
-          />
+        <td key={env.id} className="px-4 py-4 text-center align-middle">
+          <div className="flex justify-center">
+            <Switch
+              checked={!!flag.states[env.slug]}
+              onCheckedChange={() => onToggle(flag.key, env.id, env.slug)}
+              disabled={!isAdmin}
+              aria-label={`${flag.name} in ${env.name}`}
+            />
+          </div>
         </td>
       ))}
 
-      <td className="py-3.5 pr-4 text-right sm:pr-5">
+      <td className="py-4 pr-4 text-right align-middle sm:pr-6">
         <Link
           to="/org/$slug/flags/$key"
           params={{ slug: orgSlug, key: flag.key }}
-          className="inline-flex items-center justify-center rounded-sm p-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground focus-visible:opacity-100 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted/80 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`Open ${flag.name}`}
         >
           <ChevronRight className="h-4 w-4" />
@@ -320,27 +320,33 @@ export function FlagsPage() {
 
   return (
     <div className="page-container page-container-wide page-enter">
-      <div className="flex items-start justify-between gap-4 mb-8">
-        <div className="flex items-center gap-3">
-          <Flag className="h-5 w-5 text-muted-foreground mt-0.5" strokeWidth={1.75} />
-          <div>
-            <p className="page-eyebrow">Dashboard</p>
-            <h1 className="page-title">Feature flags</h1>
-          </div>
+      <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="page-eyebrow mb-1.5">Workspace</p>
+          <h1 className="page-title">Feature flags</h1>
+          <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+            Ship dark, then roll out per environment with toggles your team controls
+            in code.
+          </p>
         </div>
         {isAdmin && (
-          <div className="mt-1 shrink-0 flex flex-col items-end gap-1">
+          <div className="flex shrink-0 flex-col items-stretch gap-1 sm:items-end">
             <Button
               onClick={() => setCreateOpen(true)}
-              size="sm"
+              size="default"
               disabled={!loading && environments.length === 0}
+              className="gap-2 shadow-surface-xs"
             >
               <Plus className="h-4 w-4" />
               New flag
             </Button>
             {!loading && environments.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                <Link to="/org/$slug/environments" params={{ slug: org.slug }} className="underline underline-offset-2">
+              <p className="text-center text-xs text-muted-foreground sm:text-end">
+                <Link
+                  to="/org/$slug/environments"
+                  params={{ slug: org.slug }}
+                  className="underline underline-offset-2"
+                >
                   Create an environment
                 </Link>{' '}
                 first
@@ -351,47 +357,53 @@ export function FlagsPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive mb-6">
+        <div
+          className="mb-8 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
           {error}
         </div>
       )}
 
       {loading && (
-        <div className="surface-card overflow-hidden">
-          <div className="divide-y divide-border">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="flex items-center gap-4 px-5 py-4 sm:px-6">
-                <div className="flex-1 space-y-1.5">
-                  <Skeleton className="h-4 w-36" />
-                  <Skeleton className="h-3 w-24" />
-                </div>
-                <Skeleton className="h-5 w-9 rounded-full" />
-                <Skeleton className="h-5 w-9 rounded-full" />
+        <div className="table-shell divide-y divide-border">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-5 py-4 sm:px-6">
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-28" />
               </div>
-            ))}
-          </div>
+              <Skeleton className="h-5 w-9 rounded-full" />
+              <Skeleton className="h-5 w-9 rounded-full" />
+              <Skeleton className="h-8 w-8 rounded-md" />
+            </div>
+          ))}
         </div>
       )}
 
       {!loading && !error && flagsList.length === 0 && (
-        <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Flag className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
-          </div>
-          <h2 className="text-base font-medium text-foreground mb-1">No flags yet</h2>
-          <p className="text-sm text-muted-foreground mb-6 max-w-xs">
+        <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center shadow-surface">
+          <p className="mb-1 text-base font-medium text-foreground">No flags yet</p>
+          <p className="mb-8 max-w-sm text-sm text-muted-foreground">
             Feature flags let you ship code dark and roll out features gradually.
           </p>
           {isAdmin && environments.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              <Link to="/org/$slug/environments" params={{ slug: org.slug }} className="underline underline-offset-2">
+              <Link
+                to="/org/$slug/environments"
+                params={{ slug: org.slug }}
+                className="underline underline-offset-2"
+              >
                 Create an environment
               </Link>{' '}
               before creating flags.
             </p>
           )}
           {isAdmin && environments.length > 0 && (
-            <Button onClick={() => setCreateOpen(true)} size="sm">
+            <Button
+              onClick={() => setCreateOpen(true)}
+              className="gap-2 shadow-surface-xs"
+            >
               <Plus className="h-4 w-4" />
               Create your first flag
             </Button>
@@ -400,44 +412,50 @@ export function FlagsPage() {
       )}
 
       {!loading && !error && flagsList.length > 0 && (
-        <div className="surface-card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="py-3 pl-5 pr-4 text-left text-[0.75rem] font-medium uppercase tracking-wide text-muted-foreground sm:pl-6">
-                  Flag
-                </th>
-                {environments.map((env) => (
-                  <th
-                    key={env.id}
-                    className="px-4 py-3 text-center text-[0.75rem] font-medium uppercase tracking-wide text-muted-foreground"
-                  >
-                    {env.name}
+        <div className="table-shell overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="data-table w-full min-w-lg text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/45 dark:bg-muted/15">
+                  <th className="data-table-th px-5 py-3 text-left align-middle sm:pl-6">
+                    Flag
                   </th>
+                  {environments.map((env) => (
+                    <th
+                      key={env.id}
+                      className="data-table-th px-4 py-3 text-center align-middle whitespace-nowrap"
+                    >
+                      {env.name}
+                    </th>
+                  ))}
+                  <th className="data-table-th w-10 px-2 py-3 sm:pr-6" aria-hidden />
+                </tr>
+              </thead>
+              <tbody>
+                {flagsList.map((flag) => (
+                  <FlagTableRow
+                    key={flag.id}
+                    flag={flag}
+                    environments={environments}
+                    orgSlug={org.slug}
+                    isAdmin={isAdmin}
+                    onToggle={handleToggle}
+                  />
                 ))}
-                <th className="py-3 pr-4 sm:pr-5" />
-              </tr>
-            </thead>
-            <tbody>
-              {flagsList.map((flag) => (
-                <FlagTableRow
-                  key={flag.id}
-                  flag={flag}
-                  environments={environments}
-                  orgSlug={org.slug}
-                  isAdmin={isAdmin}
-                  onToggle={handleToggle}
-                />
-              ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {!loading && !error && flagsList.length > 0 && environments.length === 0 && (
-        <p className="mt-4 text-sm text-muted-foreground">
+        <p className="mt-6 text-sm text-muted-foreground">
           Create an{' '}
-          <Link to="/org/$slug/environments" params={{ slug: org.slug }} className="underline underline-offset-2">
+          <Link
+            to="/org/$slug/environments"
+            params={{ slug: org.slug }}
+            className="underline underline-offset-2"
+          >
             environment
           </Link>{' '}
           to start toggling flags.

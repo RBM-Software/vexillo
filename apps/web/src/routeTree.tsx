@@ -132,7 +132,7 @@ const adminRoute = createRoute({
   component: AdminLayout,
 })
 
-// /admin (index) — org list
+// /admin (index) — org list (?newOrg=1 opens create dialog)
 const adminIndexRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/',
