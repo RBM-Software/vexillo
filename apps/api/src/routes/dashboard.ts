@@ -56,13 +56,10 @@ export function createDashboardRouter(service: DashboardService, getSession: Get
 
     if (!ctx) return c.json({ error: 'Organization not found' }, 404);
     if (ctx.org.status === 'suspended') return c.json({ error: 'Organization suspended' }, 403);
-
-    // Super admins have full admin access to every org even without explicit membership
-    const role = ctx.role ?? (session.user.isSuperAdmin ? 'admin' : null);
-    if (!role) return c.json({ error: 'Not a member of this organization' }, 403);
+    if (!ctx.role) return c.json({ error: 'Not a member of this organization' }, 403);
 
     c.set('org', ctx.org);
-    c.set('userRole', role);
+    c.set('userRole', ctx.role);
     await next();
   });
 
