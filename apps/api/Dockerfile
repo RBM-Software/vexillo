@@ -13,6 +13,7 @@ COPY packages/db/drizzle ./packages/db/drizzle
 COPY packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
 # Keep API source at its workspace path so bun resolves apps/api/node_modules
 COPY apps/api/src ./apps/api/src
+COPY apps/api/scripts ./apps/api/scripts
 
 # Startup: run pending migrations, then start the API server.
 # drizzle-kit migrate is idempotent — safe to run on every deploy.
