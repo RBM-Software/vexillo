@@ -38,7 +38,7 @@ export function ConfirmFlagToggleDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton className="gap-4 sm:max-w-sm sm:p-5">
+      <DialogContent showCloseButton className="gap-4 sm:max-w-sm">
         <DialogHeader className="gap-3 pe-9">
           <DialogTitle className="text-[0.9375rem] font-normal leading-snug text-muted-foreground">
             <span className="font-heading font-medium text-foreground">{flagName}</span>
@@ -60,7 +60,7 @@ export function ConfirmFlagToggleDialog({
             </p>
           </div>
         </DialogHeader>
-        <DialogFooter className="border-0 pt-0 sm:gap-2">
+        <DialogFooter className="sm:gap-2">
           <DialogClose render={<Button type="button" variant="outline" size="sm" disabled={confirmBusy} />}>
             Cancel
           </DialogClose>

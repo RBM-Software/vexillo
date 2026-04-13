@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Boxes, Plus, RefreshCw, Trash2, X, Check, Copy } from 'lucide-react'
+import { useState, useEffect, useCallback, type FormEvent } from 'react'
+import { Plus, RefreshCw, Trash2, X, Check, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -32,7 +32,7 @@ function CreateEnvDialog({
   const [name, setName] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
     setSubmitting(true)
@@ -85,7 +85,11 @@ function CreateEnvDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !name.trim()}>
+            <Button
+              type="submit"
+              disabled={submitting || !name.trim()}
+              className="shadow-surface-xs"
+            >
               {submitting ? 'Creating…' : 'Create environment'}
             </Button>
           </DialogFooter>
@@ -232,9 +236,7 @@ function AllowedOriginsEditor({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Allowed origins
-      </p>
+      <p className="data-table-th text-left">Allowed origins</p>
       {origins.length === 0 ? (
         <p className="text-xs text-muted-foreground italic">None — all cross-origin requests blocked</p>
       ) : (
@@ -315,45 +317,40 @@ function EnvironmentCard({
   }
 
   return (
-    <div className="surface-card">
-      <div className="px-5 py-4 sm:px-6 flex items-start justify-between gap-4">
+    <div className="table-shell overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-border bg-muted/45 px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:bg-muted/15">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm font-semibold text-foreground">{env.name}</h2>
-            <code className="text-[0.7rem] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm">
-              {env.slug}
-            </code>
-          </div>
+          <p className="data-table-primary-label text-[0.9375rem]">{env.name}</p>
+          <p className="data-table-mono-meta mt-0.5">{env.slug}</p>
         </div>
         {isAdmin && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               size="sm"
               variant="outline"
               onClick={handleRotate}
               disabled={rotating}
-              className="h-7 text-xs gap-1.5"
+              className="gap-1.5 shadow-surface-xs"
             >
-              <RefreshCw className={`h-3 w-3 ${rotating ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${rotating ? 'animate-spin' : ''}`} />
               Rotate key
             </Button>
             <Button
-              size="sm"
-              variant="outline"
+              size="icon"
+              variant="ghost"
               onClick={() => onDelete(env)}
-              className="h-7 text-xs text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/50"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              aria-label={`Delete ${env.name}`}
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         )}
       </div>
 
-      <div className="border-t border-border px-5 py-4 sm:px-6 space-y-4">
+      <div className="space-y-4 px-5 py-5 sm:px-6">
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            API key
-          </p>
+          <p className="data-table-th text-left">API key</p>
           {env.keyHint ? (
             <code className="text-xs font-mono text-foreground">{env.keyHint}</code>
           ) : (
@@ -421,16 +418,21 @@ export function EnvironmentsPage() {
 
   return (
     <div className="page-container page-container-wide page-enter">
-      <div className="flex items-start justify-between gap-4 mb-8">
-        <div className="flex items-center gap-3">
-          <Boxes className="h-5 w-5 text-muted-foreground mt-0.5" strokeWidth={1.75} />
-          <div>
-            <p className="page-eyebrow">Settings</p>
-            <h1 className="page-title">Environments</h1>
-          </div>
+      <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="page-eyebrow mb-1.5">Workspace</p>
+          <h1 className="page-title">Environments</h1>
+          <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+            Separate SDK keys and allowed origins per environment so you can ship safely
+            from development through production.
+          </p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setCreateOpen(true)} size="sm" className="mt-1 shrink-0">
+          <Button
+            onClick={() => setCreateOpen(true)}
+            size="default"
+            className="shrink-0 gap-2 shadow-surface-xs"
+          >
             <Plus className="h-4 w-4" />
             New environment
           </Button>
@@ -438,33 +440,38 @@ export function EnvironmentsPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive mb-6">
+        <div
+          className="mb-8 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
           {error}
         </div>
       )}
 
       {loading && (
-        <div className="space-y-4">
-          {[...Array(2)].map((_, i) => (
-            <div key={i} className="surface-card px-5 py-4 sm:px-6 space-y-3">
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-3 w-48" />
+        <div className="table-shell divide-y divide-border">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-5 py-4 sm:px-6">
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-28" />
+              </div>
+              <Skeleton className="h-8 w-24 rounded-md" />
+              <Skeleton className="h-8 w-8 rounded-md" />
             </div>
           ))}
         </div>
       )}
 
       {!loading && !error && envs.length === 0 && (
-        <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Boxes className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
-          </div>
-          <h2 className="text-base font-medium text-foreground mb-1">No environments yet</h2>
-          <p className="text-sm text-muted-foreground mb-6 max-w-xs">
-            Environments let you manage separate flag states for production, staging, and development.
+        <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center shadow-surface">
+          <p className="mb-1 text-base font-medium text-foreground">No environments yet</p>
+          <p className="mb-8 max-w-sm text-sm text-muted-foreground">
+            Environments let you manage separate flag states for production, staging, and
+            development.
           </p>
           {isAdmin && (
-            <Button onClick={() => setCreateOpen(true)} size="sm">
+            <Button onClick={() => setCreateOpen(true)} className="gap-2 shadow-surface-xs">
               <Plus className="h-4 w-4" />
               Create your first environment
             </Button>
@@ -473,7 +480,7 @@ export function EnvironmentsPage() {
       )}
 
       {!loading && !error && envs.length > 0 && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {envs.map((env) => (
             <EnvironmentCard
               key={env.id}

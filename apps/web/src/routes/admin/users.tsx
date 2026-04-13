@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Shield, UserMinus } from 'lucide-react'
+import { UserMinus } from 'lucide-react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -25,7 +26,7 @@ interface AdminUser {
 
 async function fetchAdminUsers(): Promise<AdminUser[]> {
   const res = await fetch('/api/superadmin/users')
-  if (!res.ok) throw new Error(`Failed to load super admins (${res.status})`)
+  if (!res.ok) throw new Error(`Failed to load administrators (${res.status})`)
   const data = await res.json()
   return data.users
 }
@@ -38,7 +39,7 @@ async function demoteUser(userId: string): Promise<void> {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.error ?? 'Failed to remove admin')
+    throw new Error(data.error ?? 'Failed to revoke access')
   }
 }
 
@@ -61,9 +62,9 @@ function DemoteDialog({
       await demoteUser(user.id)
       onDemoted(user.id)
       onClose()
-      toast.success(`Admin access removed for ${user.email}`)
+      toast.success(`Removed ${user.email} from administrators`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove admin')
+      toast.error(err instanceof Error ? err.message : 'Failed to revoke access')
     } finally {
       setDemoting(false)
     }
@@ -73,20 +74,20 @@ function DemoteDialog({
     <Dialog open onOpenChange={() => !demoting && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Remove admin access?</DialogTitle>
+          <DialogTitle>Revoke access?</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          <strong>{user.email}</strong> will lose super admin access immediately.
-          They can be re-promoted by adding their email to{' '}
-          <code className="text-xs bg-muted px-1 py-0.5 rounded">SUPER_ADMIN_EMAILS</code>{' '}
-          and signing in again.
+          <strong>{user.email}</strong> will lose this access immediately. They can be
+          added again via{' '}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">SUPER_ADMIN_EMAILS</code>{' '}
+          before their next sign-in.
         </p>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={demoting}>
             Cancel
           </Button>
           <Button variant="destructive" onClick={handleDemote} disabled={demoting}>
-            {demoting ? 'Removing…' : 'Remove admin'}
+            {demoting ? 'Revoking…' : 'Revoke access'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -111,7 +112,7 @@ export function AdminUsersPage() {
       const result = await fetchAdminUsers()
       setUsers(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load super admins')
+      setError(err instanceof Error ? err.message : 'Failed to load administrators')
     } finally {
       setLoading(false)
     }
@@ -127,96 +128,131 @@ export function AdminUsersPage() {
 
   return (
     <div className="page-container page-container-wide page-enter">
-      <div className="flex items-start justify-between gap-4 mb-8">
-        <div className="flex items-center gap-3">
-          <Shield
-            className="h-5 w-5 text-muted-foreground mt-0.5"
-            strokeWidth={1.75}
-          />
-          <div>
-            <p className="page-eyebrow">Super admin</p>
-            <h1 className="page-title">Super Admins</h1>
-          </div>
+      <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="page-eyebrow mb-1.5">Access</p>
+          <h1 className="page-title">Administrators</h1>
+          <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+            Create organizations, manage any tenant, and edit org-wide settings. Remove
+            someone below, or list an email in{' '}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">SUPER_ADMIN_EMAILS</code>{' '}
+            so their next sign-in picks it up.
+          </p>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive mb-6">
+        <div
+          className="mb-8 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
           {error}
         </div>
       )}
 
       {loading && (
-        <div className="surface-card divide-y divide-border">
-          {[...Array(2)].map((_, i) => (
+        <div className="table-shell divide-y divide-border">
+          {[...Array(4)].map((_, i) => (
             <div key={i} className="flex items-center gap-4 px-5 py-4 sm:px-6">
               <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-3 w-32" />
               </div>
-              <Skeleton className="h-7 w-24 rounded-md" />
+              <Skeleton className="hidden h-5 w-12 rounded-full sm:block" />
+              <Skeleton className="hidden h-3.5 w-20 sm:block" />
+              <Skeleton className="h-8 w-8 rounded-md" />
             </div>
           ))}
         </div>
       )}
 
       {!loading && !error && users.length === 0 && (
-        <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Shield
-              className="h-5 w-5 text-muted-foreground"
-              strokeWidth={1.5}
-            />
-          </div>
-          <h2 className="text-base font-medium text-foreground mb-1">
-            No super admins
-          </h2>
-          <p className="text-sm text-muted-foreground max-w-xs">
+        <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center shadow-surface">
+          <p className="mb-1 text-base font-medium text-foreground">
+            No administrators yet
+          </p>
+          <p className="max-w-sm text-sm text-muted-foreground">
             Add an email to{' '}
-            <code className="text-xs bg-muted px-1 py-0.5 rounded">SUPER_ADMIN_EMAILS</code>{' '}
-            to grant super admin access on next sign-in.
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">SUPER_ADMIN_EMAILS</code>{' '}
+            so the next sign-in from that address grants access.
           </p>
         </div>
       )}
 
       {!loading && !error && users.length > 0 && (
-        <div className="surface-card divide-y divide-border">
-          {users.map((user) => (
-            <div
-              key={user.id}
-              className="flex items-center gap-4 px-5 py-4 sm:px-6"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {user.email}
-                  {user.id === currentUserId && (
-                    <span className="ml-2 text-xs text-muted-foreground font-normal">(you)</span>
-                  )}
-                </p>
-                {user.name && (
-                  <p className="text-[0.75rem] text-muted-foreground mt-0.5 truncate">
-                    {user.name}
+        <div className="table-shell overflow-hidden">
+          <div className="hidden grid-cols-[1fr_6.5rem_7.5rem_2.5rem] gap-4 border-b border-border bg-muted/45 px-5 py-3 sm:grid dark:bg-muted/15">
+            <span className="data-table-th">Account</span>
+            <span className="data-table-th">Role</span>
+            <span className="data-table-th">Created</span>
+            <span className="sr-only">Actions</span>
+          </div>
+
+          {users.map((user) => {
+            const isSelf = user.id === currentUserId
+            return (
+              <div
+                key={user.id}
+                className="data-table-body-row grid grid-cols-[1fr_auto] gap-4 border-b border-border px-5 py-4 last:border-0 sm:grid-cols-[1fr_6.5rem_7.5rem_2.5rem] sm:items-center sm:px-6"
+              >
+                <div className="min-w-0">
+                  <p className="data-table-primary-label text-[0.9375rem]">{user.email}</p>
+                  <p className="mt-0.5 truncate text-[0.8125rem] text-muted-foreground">
+                    {user.name || '—'}
                   </p>
-                )}
-              </div>
-              <div className="shrink-0 flex items-center gap-3">
-                <span className="text-[0.75rem] text-muted-foreground hidden sm:inline">
+                </div>
+
+                <div className="hidden sm:flex sm:items-center">
+                  {isSelf ? (
+                    <Badge
+                      variant="secondary"
+                      className="h-6 px-2 text-[0.6875rem] font-medium"
+                    >
+                      You
+                    </Badge>
+                  ) : (
+                    <span className="text-xs font-medium text-muted-foreground">—</span>
+                  )}
+                </div>
+
+                <span className="hidden text-sm tabular-nums text-muted-foreground sm:block">
                   {new Date(user.createdAt).toLocaleDateString()}
                 </span>
-                {user.id !== currentUserId && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setDemoteTarget(user)}
-                    className="h-7 gap-1 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/50"
-                  >
-                    <UserMinus className="h-3.5 w-3.5" />
-                    Remove admin
-                  </Button>
-                )}
+
+                <div className="flex justify-end sm:justify-start">
+                  {user.id !== currentUserId ? (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setDemoteTarget(user)}
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      aria-label={`Revoke administrator access for ${user.email}`}
+                    >
+                      <UserMinus className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <span className="inline-flex h-8 w-8 items-center justify-center text-xs text-muted-foreground">
+                      —
+                    </span>
+                  )}
+                </div>
+
+                <div className="col-span-2 flex flex-wrap items-center gap-2 sm:hidden">
+                  {isSelf && (
+                    <Badge
+                      variant="secondary"
+                      className="h-6 px-2 text-[0.6875rem] font-medium"
+                    >
+                      You
+                    </Badge>
+                  )}
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {new Date(user.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
