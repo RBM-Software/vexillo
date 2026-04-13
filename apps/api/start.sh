@@ -7,11 +7,12 @@ exec 2>&1
 echo "=== container start: PORT=$PORT NODE_ENV=$NODE_ENV ==="
 
 echo "Running database migrations..."
+echo "DATABASE_URL set: $([ -n "$DATABASE_URL" ] && echo "yes (${#DATABASE_URL} chars)" || echo "NO — missing")"
 cd /app/packages/db
 # CI=true disables ora's interactive spinner so drizzle-kit writes plain
 # text to stdout/stderr (not /dev/tty) — making errors visible in CloudWatch.
 set +e
-CI=true NO_COLOR=1 ./node_modules/.bin/drizzle-kit migrate > /tmp/migrate.log 2>&1
+CI=true NO_COLOR=1 ./node_modules/.bin/drizzle-kit migrate --verbose > /tmp/migrate.log 2>&1
 MIGRATE_EXIT=$?
 set -e
 cat /tmp/migrate.log
