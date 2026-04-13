@@ -73,6 +73,36 @@ For example: `https://acme.okta.com/oauth2/default`
 
 Do **not** use just `https://acme.okta.com` — the discovery endpoint (`/.well-known/openid-configuration`) won't resolve correctly without the `/oauth2/default` path.
 
+### Authorization Server Access Policy
+
+Okta requires two separate policies to complete sign-in:
+
+1. **Authentication Policy** — controls who can sign in (configured on the app)
+2. **Authorization Server Access Policy** — controls which apps can get OAuth tokens
+
+Without an Access Policy rule, sign-in fails with `no_matching_policy` even if the user authenticated successfully.
+
+**Set up the Access Policy:**
+
+1. Go to **Security → API → Authorization Servers → default → Access Policies**
+2. Click **Add New Access Policy**, name it (e.g. `Vexillo App`), set **Assign to** → **All clients**, save
+3. Click into the policy → **Add Rule**:
+   - **Rule name**: `Allow Authorization Code`
+   - **Grant type**: ✅ Authorization Code
+   - **User is**: Any user assigned the app
+   - **Scopes**: Any scopes
+4. Click **Create rule**
+
+### Authentication Policy
+
+1. Go to **Security → Authentication Policies → Add a Policy**, name it (e.g. `Vexillo Access`)
+2. Click **Add Rule**:
+   - **User's user type**: Any user type
+   - **User's group membership**: Any group
+   - **User is**: Any user
+   - **Risk**: Any
+3. Save the rule, then go to your app → **Sign On tab → User authentication → Edit** and assign this policy
+
 ---
 
 ## First-Time Setup
