@@ -51,10 +51,22 @@ pnpm dev
 
 ## First-time setup
 
-1. Visit `http://localhost:5173` — enter your org slug to reach the sign-in page, or go directly to `http://localhost:5173/org/<slug>/sign-in`
-2. The first user to sign in via an org's Okta app is provisioned as a viewer; set `SUPER_ADMIN_EMAILS` to auto-promote specific accounts to super-admin on sign-in
-3. Super-admins access `/admin` to create organisations and configure each org's Okta OAuth credentials (use `https://<domain>.okta.com` as the issuer, not `/oauth2/default`)
-4. Org members sign in at `http://localhost:5173/org/<slug>/sign-in` — their account is provisioned automatically on first sign-in via Okta JIT
+Sign-in requires an org to exist. Seed the first one directly into the database (it can't be created via the UI yet because sign-in requires an org):
+
+```sh
+DATABASE_URL=<value> OKTA_SECRET_KEY=<value> \
+  bun run apps/api/scripts/seed-org.ts \
+  "Acme Corp" acme https://acme.okta.com/oauth2/default <clientId> <clientSecret>
+```
+
+The script is idempotent — safe to re-run.
+
+Then:
+
+1. Sign in at `http://localhost:5173/org/<slug>/sign-in` via Okta
+2. Your account is auto-promoted to super-admin if your email is in `SUPER_ADMIN_EMAILS`
+3. Use `/admin` to create additional organisations and configure their Okta credentials
+4. Org members sign in at `/org/<slug>/sign-in` — their account is provisioned automatically on first sign-in via Okta JIT
 
 ## Scripts
 
@@ -65,6 +77,10 @@ pnpm dev
 | `pnpm test` | Run all test suites |
 | `pnpm typecheck` | Type-check all packages |
 | `pnpm lint` | Lint all packages |
+
+## Deployment
+
+See [`infra/DEPLOY.md`](infra/DEPLOY.md) for deploying to AWS (CDK, ECS Fargate, RDS, CloudFront).
 
 ## React SDK
 
