@@ -18,46 +18,53 @@ import { Construct } from 'constructs';
  * Architecture:
  *   CloudFront → S3 (default, Vite SPA)
  *              → ALB → ECS Fargate (/api/*, 30s cache on /api/sdk/flags)
- *   ECS Fargate → RDS Postgres (via VPC, private subnet)
+ *   ECS Fargate → RDS Postgres (isolated subnet, same VPC)
  *   ECR        ← CI/CD (docker push + ecs update-service)
- *   SSM        ← operator sets real secret values via setup-secrets.sh
+ *   SSM        ← operator sets real secret values via setup.sh
  */
 export class VexilloStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // ── SSM Parameters — operator-managed, referenced by name ────────────────
-    // Parameters are NOT created by CDK — they are set manually via setup-secrets.sh.
-    // CDK only references them by name so ECS can inject them as env vars at task start.
-    // String-type SSM parameters
-    const stringParamNames = [
+    // ── SSM Parameters ────────────────────────────────────────────────────────
+    // String parameters are created by CDK with placeholder values so 'cdk deploy'
+    // works on a fresh account with no prior setup. Run './setup.sh' afterwards to
+    // overwrite the placeholders with real secrets.
+    //
+    // CloudFormation only updates a resource when its template definition changes —
+    // a 'cdk deploy' with no changes to these constructs will not clobber values
+    // that './setup.sh' has set.
+    const ssmParams: Record<string, ssm.StringParameter> = {};
+    for (const name of [
       '/vexillo/DATABASE_URL',
       '/vexillo/BETTER_AUTH_SECRET',
       '/vexillo/BETTER_AUTH_URL',
       '/vexillo/BETTER_AUTH_TRUSTED_ORIGINS',
       '/vexillo/SUPER_ADMIN_EMAILS',
-    ] as const;
-
-    const ssmParams: Record<string, ssm.IStringParameter> = {};
-    for (const name of stringParamNames) {
+    ] as const) {
       const id = name.replace(/\//g, '').replace(/_/g, '');
-      ssmParams[name] = ssm.StringParameter.fromStringParameterAttributes(this, `Param${id}`, {
+      ssmParams[name] = new ssm.StringParameter(this, `Param${id}`, {
         parameterName: name,
+        stringValue: 'placeholder',
       });
     }
 
-    // SecureString-type SSM parameter (created with --type SecureString)
+    // OKTA_SECRET_KEY must be SecureString — CDK cannot create SecureString parameters.
+    // setup.sh creates the placeholder automatically before running 'cdk deploy'.
     const oktaSecretKeyParam = ssm.StringParameter.fromSecureStringParameterAttributes(
       this, 'ParamvexilloOKTASECRETKEY', { parameterName: '/vexillo/OKTA_SECRET_KEY' },
     );
 
     // ── VPC ──────────────────────────────────────────────────────────────────
+    // No NAT gateway: ECS tasks run in the public subnet with assignPublicIp so
+    // they can reach ECR and SSM directly. RDS sits in an isolated subnet with
+    // no internet route — the security group is the only access control needed.
     const vpc = new ec2.Vpc(this, 'Vpc', {
       maxAzs: 2,
-      natGateways: 1,
+      natGateways: 0,
       subnetConfiguration: [
-        { name: 'Public',  subnetType: ec2.SubnetType.PUBLIC,               cidrMask: 24 },
-        { name: 'Private', subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,  cidrMask: 24 },
+        { name: 'Public',   subnetType: ec2.SubnetType.PUBLIC,           cidrMask: 24 },
+        { name: 'Isolated', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
       ],
     });
 
@@ -81,7 +88,7 @@ export class VexilloStack extends cdk.Stack {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
       credentials: rds.Credentials.fromGeneratedSecret('postgres', { secretName: '/vexillo/rds-credentials' }),
       vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [rdsSg],
       databaseName: 'vexillo',
       multiAz: false,
@@ -102,7 +109,6 @@ export class VexilloStack extends cdk.Stack {
     const cluster = new ecs.Cluster(this, 'Cluster', {
       vpc,
       clusterName: 'vexillo',
-      containerInsightsV2: ecs.ContainerInsights.ENABLED,
     });
 
     // ── Task execution role (pull image from ECR, read SSM, write logs) ───────
@@ -147,9 +153,9 @@ export class VexilloStack extends cdk.Stack {
       memoryLimitMiB: 512,
       desiredCount: 1,
       securityGroups: [apiSg],
-      taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      taskSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       publicLoadBalancer: true,
-      assignPublicIp: false,
+      assignPublicIp: true,
       enableExecuteCommand: true,
       taskImageOptions: {
         image: ecs.ContainerImage.fromRegistry('public.ecr.aws/docker/library/python:3.11-alpine'),

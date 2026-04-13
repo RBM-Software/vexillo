@@ -13,13 +13,13 @@ CloudFront (HTTPS)
 |---------|---------|
 | CloudFront | CDN entry point, TLS, cache policies, security headers |
 | ALB | Routes `/api/*` to the API container |
-| ECS Fargate | Runs the Hono API (256 CPU, 512 MB) |
+| ECS Fargate | Runs the Hono API (256 CPU, 512 MB), public subnet with public IP |
 | ECR | Stores Docker images (last 10 kept) |
-| RDS PostgreSQL 16 | Managed database (t4g.micro, private subnet) |
+| RDS PostgreSQL 16 | Managed database (t4g.micro, isolated subnet) |
 | S3 | Hosts the Vite SPA build |
 | SSM Parameter Store | API runtime secrets injected at container start |
 | Secrets Manager | RDS credentials (auto-managed by RDS) |
-| VPC | 2 AZs, 1 NAT gateway, public/private subnets |
+| VPC | 2 AZs, no NAT gateway, public + isolated subnets |
 
 ---
 
@@ -36,96 +36,44 @@ CloudFront (HTTPS)
 
 ## First-Time Setup
 
-### 1. Bootstrap CDK (once per account/region)
+### Prerequisites
+
+- [AWS CLI](https://aws.amazon.com/cli/) configured (`aws configure`)
+- [AWS CDK](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html) v2 (`npm i -g aws-cdk`)
+- [Node.js](https://nodejs.org) ≥ 20
+- [pnpm](https://pnpm.io) ≥ 10
+- [Bun](https://bun.sh) ≥ 1.x
+- [GitHub CLI](https://cli.github.com) (`gh`) for setting Actions secrets
+- An AWS account with sufficient IAM permissions (see [IAM policy](#iam-policy))
+
+### 1. Run setup
 
 ```sh
 cd infra
-cdk bootstrap
+./setup.sh
 ```
 
-### 2. Deploy the stack
+The script prompts for your super-admin email(s) and optionally seeds the first organisation,
+then runs unattended — no further input required. It handles:
 
-```sh
-cdk deploy
-```
+- Creating the OKTA_SECRET_KEY SSM placeholder (required before `cdk deploy`)
+- `cdk bootstrap` + `cdk deploy` (~10 min on first run)
+- Fetching the RDS password and writing all SSM secrets
+- Creating the `vexillo-deploy` IAM user and attaching the deploy policy
+- Setting all 8 GitHub Actions secrets automatically
 
-This creates all infrastructure: VPC, RDS, ECR, ECS cluster, ALB, S3, CloudFront, and SSM
-parameter placeholders. The ECS service starts with a placeholder image until the first real
-deployment.
+**SSM parameters written:**
 
-Note the stack outputs printed at the end — you'll need them in the next steps.
+| Parameter | Description |
+|-----------|-------------|
+| `/vexillo/DATABASE_URL` | PostgreSQL connection string (with `sslmode=require`) |
+| `/vexillo/BETTER_AUTH_SECRET` | 32-byte hex session secret |
+| `/vexillo/BETTER_AUTH_URL` | CloudFront distribution URL |
+| `/vexillo/BETTER_AUTH_TRUSTED_ORIGINS` | CloudFront distribution URL |
+| `/vexillo/OKTA_SECRET_KEY` | 32-byte hex AES-256-GCM key for Okta secrets |
+| `/vexillo/SUPER_ADMIN_EMAILS` | Comma-separated super-admin emails |
 
-### 3. Fill in secrets
-
-```sh
-./setup-secrets.sh
-```
-
-This script reads the stack outputs, fetches the auto-generated RDS password from Secrets
-Manager, builds the `DATABASE_URL`, generates a `BETTER_AUTH_SECRET`, and writes everything to
-SSM Parameter Store.
-
-Then set the one remaining secret manually:
-
-```sh
-aws ssm put-parameter \
-  --name /vexillo/SUPER_ADMIN_EMAILS \
-  --value "you@example.com" \
-  --type String
-```
-
-**All SSM parameters:**
-
-| Parameter | Set by | Description |
-|-----------|--------|-------------|
-| `/vexillo/DATABASE_URL` | `setup-secrets.sh` | PostgreSQL connection string |
-| `/vexillo/BETTER_AUTH_SECRET` | `setup-secrets.sh` | 32-byte hex session secret |
-| `/vexillo/BETTER_AUTH_URL` | `setup-secrets.sh` | CloudFront distribution URL |
-| `/vexillo/BETTER_AUTH_TRUSTED_ORIGINS` | `setup-secrets.sh` | CloudFront distribution URL |
-| `/vexillo/SUPER_ADMIN_EMAILS` | Manual | Comma-separated super-admin emails |
-
-### 4. Create a deploy IAM user
-
-Create an IAM user for GitHub Actions using the policy in `iam-deploy-policy.json`, then generate
-an access key for it.
-
-```sh
-aws iam create-user --user-name vexillo-deploy
-aws iam put-user-policy \
-  --user-name vexillo-deploy \
-  --policy-name vexillo-deploy \
-  --policy-document file://iam-deploy-policy.json
-aws iam create-access-key --user-name vexillo-deploy
-```
-
-### 5. Configure GitHub Actions secrets
-
-Replace the values below with your stack outputs and the IAM key you just created:
-
-```sh
-gh secret set AWS_ACCESS_KEY_ID        --body "<key-id>"
-gh secret set AWS_SECRET_ACCESS_KEY    --body "<secret>"
-gh secret set AWS_REGION               --body "us-east-1"
-gh secret set ECR_REPOSITORY           --body "vexillo-api"
-gh secret set ECS_CLUSTER_NAME         --body "vexillo"
-gh secret set ECS_SERVICE_NAME         --body "vexillo-api"
-```
-
-Fetch the remaining values from stack outputs:
-
-```sh
-STACK=VexilloStack
-
-gh secret set S3_BUCKET_NAME --body "$(
-  aws cloudformation describe-stacks --stack-name $STACK \
-    --query 'Stacks[0].Outputs[?OutputKey==`WebBucketName`].OutputValue' --output text)"
-
-gh secret set CLOUDFRONT_DISTRIBUTION_ID --body "$(
-  aws cloudformation describe-stacks --stack-name $STACK \
-    --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' --output text)"
-```
-
-### 6. Trigger the first deployment
+### 2. Trigger the first deployment
 
 ```sh
 git push origin main
@@ -135,14 +83,31 @@ GitHub Actions will build and push the API image to ECR, run database migrations
 container, update the ECS service, build the Vite SPA, upload it to S3, and invalidate
 CloudFront.
 
-### 7. Verify
+Monitor progress: `gh run watch`
+
+### 3. Verify
 
 ```sh
-CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name VexilloStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontUrl`].OutputValue' --output text)
-
+CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name VexilloStack --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontUrl`].OutputValue' --output text)
 curl "$CLOUDFRONT_URL/api/health"  # → {"status":"ok"}
 ```
+
+Note: this only works after step 2 (first real deployment). Before that, the Python
+placeholder container returns 404 for `/api/health`.
+
+### Seeding an organisation
+
+RDS is in a private isolated subnet — not reachable from your local machine. Run the seed
+script via ECS Exec from inside the running API container (after the first deployment):
+
+```sh
+TASK_ARN=$(aws ecs list-tasks --cluster vexillo --service-name vexillo-api --query 'taskArns[0]' --output text)
+
+aws ecs execute-command --cluster vexillo --task "$TASK_ARN" --container api --interactive --command "bun run apps/api/scripts/seed-org.ts 'Acme Corp' acme https://acme.okta.com/oauth2/default <clientId> <clientSecret>"
+```
+
+The environment variables (`DATABASE_URL`, `OKTA_SECRET_KEY`) are already injected into the
+container from SSM — no need to pass them manually. The script is idempotent — safe to re-run.
 
 ---
 
@@ -209,12 +174,14 @@ aws ecs describe-services \
   --query 'services[0].taskDefinition'
 ```
 
-**Tear down** (RDS and S3 are retained by default):
+**Tear down:**
 
 ```sh
 cd infra
-cdk destroy
+./teardown.sh
 ```
+
+RDS must be deleted before the VPC subnets can be removed, so `teardown.sh` handles the full sequence: deletes RDS and waits for it to finish, runs `cdk destroy`, then removes ECR, S3, SSM parameters, and the IAM deploy user.
 
 ---
 
