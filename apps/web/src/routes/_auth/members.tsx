@@ -199,7 +199,7 @@ export function MembersPage() {
         cell: ({ row }) => {
           const member = row.original
           const isSelf = member.id === currentUserId
-          if (isSuperAdmin && !isSelf && !member.isSuperAdmin) {
+          if (isAdmin && !isSelf && !member.isSuperAdmin) {
             return <RolePicker member={member} orgSlug={org.slug} />
           }
           return (
@@ -254,7 +254,7 @@ export function MembersPage() {
         },
       },
     ],
-    [org.slug, isSuperAdmin, currentUserId],
+    [org.slug, isAdmin, isSuperAdmin, currentUserId],
   )
 
   const table = useReactTable({
