@@ -91,6 +91,8 @@ S3_BUCKET=$(get_output WebBucketName)
 CF_DIST_ID=$(get_output CloudFrontDistributionId)
 ECR_REPO_URI=$(get_output EcrRepositoryUri)
 ECR_REPO_NAME=$(basename "$ECR_REPO_URI")
+ECS_CLUSTER=$(get_output EcsClusterName)
+ECS_SERVICE=$(get_output EcsServiceName)
 
 if [ -z "$CLOUDFRONT_URL" ] || [ -z "$RDS_ENDPOINT" ]; then
   echo "Error: $STACK outputs not found. Did 'cdk deploy' succeed?"
@@ -182,8 +184,8 @@ gh_secret AWS_ACCESS_KEY_ID           "$AWS_KEY_ID"
 gh_secret AWS_SECRET_ACCESS_KEY       "$AWS_KEY_SECRET"
 gh_secret AWS_REGION                  "$AWS_REGION"
 gh_secret ECR_REPOSITORY              "$ECR_REPO_NAME"
-gh_secret ECS_CLUSTER_NAME            "vexillo"
-gh_secret ECS_SERVICE_NAME            "vexillo-api"
+gh_secret ECS_CLUSTER_NAME            "$ECS_CLUSTER"
+gh_secret ECS_SERVICE_NAME            "$ECS_SERVICE"
 gh_secret S3_BUCKET_NAME              "$S3_BUCKET"
 gh_secret CLOUDFRONT_DISTRIBUTION_ID  "$CF_DIST_ID"
 echo ""
