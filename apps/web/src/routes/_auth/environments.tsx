@@ -382,23 +382,13 @@ export function EnvironmentsPage() {
       {
         id: 'actions',
         enableHiding: false,
-        size: 140,
+        size: 48,
         cell: ({ row }) => {
           const env = row.original
           if (!isAdmin) return null
           const isRotating = rotatingId === env.id
           return (
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleRotate(env)}
-                disabled={isRotating}
-                className="gap-1.5"
-              >
-                <RefreshCw className={cn('h-3.5 w-3.5', isRotating && 'animate-spin')} />
-                Rotate key
-              </Button>
+            <div className="flex justify-end">
               <DropdownMenu>
                 <DropdownMenuTrigger
                   type="button"
@@ -408,6 +398,10 @@ export function EnvironmentsPage() {
                   <span className="sr-only">Open menu</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleRotate(env)} disabled={isRotating}>
+                    <RefreshCw className={cn('h-4 w-4', isRotating && 'animate-spin')} />
+                    Rotate key
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setOriginsTarget(env)}>
                     Manage origins
                   </DropdownMenuItem>
