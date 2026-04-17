@@ -133,5 +133,13 @@ export const api = {
       call<void>(`/api/dashboard/${orgSlug}/members/${encodeURIComponent(userId)}`, {
         method: 'DELETE',
       }),
+
+    listRemoved: (orgSlug: string) =>
+      call<{ members: MemberRow[] }>(`/api/dashboard/${orgSlug}/members/removed`),
+
+    restore: (orgSlug: string, userId: string) =>
+      call<void>(`/api/dashboard/${orgSlug}/members/${encodeURIComponent(userId)}/restore`, {
+        method: 'POST',
+      }),
   },
 }

@@ -1,4 +1,4 @@
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, isNull, isNotNull, sql } from 'drizzle-orm';
 import { organizationMembers, authUser } from '../schema';
 import type { DbClient } from '../client';
 
@@ -30,7 +30,7 @@ export async function queryOrgMembers(db: DbClient, orgId: string): Promise<Memb
     })
     .from(organizationMembers)
     .innerJoin(authUser, eq(authUser.id, organizationMembers.userId))
-    .where(eq(organizationMembers.orgId, orgId))
+    .where(and(eq(organizationMembers.orgId, orgId), isNull(organizationMembers.removedAt)))
     .orderBy(asc(organizationMembers.createdAt));
 }
 
@@ -38,7 +38,7 @@ export async function countOrgAdmins(db: DbClient, orgId: string): Promise<numbe
   const rows = await db
     .select({ userId: organizationMembers.userId })
     .from(organizationMembers)
-    .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, 'admin')));
+    .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, 'admin'), isNull(organizationMembers.removedAt)));
   return rows.length;
 }
 
@@ -50,7 +50,7 @@ export async function queryMemberRole(
   const [row] = await db
     .select({ role: organizationMembers.role })
     .from(organizationMembers)
-    .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+    .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), isNull(organizationMembers.removedAt)))
     .limit(1);
   return row?.role ?? null;
 }
@@ -71,6 +71,31 @@ export async function updateMemberRole(
 
 export async function removeMember(db: DbClient, orgId: string, userId: string): Promise<void> {
   await db
-    .delete(organizationMembers)
+    .update(organizationMembers)
+    .set({ removedAt: sql`now()` })
     .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+}
+
+export async function queryRemovedOrgMembers(db: DbClient, orgId: string): Promise<MemberRow[]> {
+  return db
+    .select({
+      id: authUser.id,
+      name: authUser.name,
+      email: authUser.email,
+      role: organizationMembers.role,
+      createdAt: organizationMembers.createdAt,
+    })
+    .from(organizationMembers)
+    .innerJoin(authUser, eq(authUser.id, organizationMembers.userId))
+    .where(and(eq(organizationMembers.orgId, orgId), isNotNull(organizationMembers.removedAt)))
+    .orderBy(asc(organizationMembers.createdAt));
+}
+
+export async function restoreMember(db: DbClient, orgId: string, userId: string): Promise<boolean> {
+  const result = await db
+    .update(organizationMembers)
+    .set({ removedAt: null, role: 'viewer' })
+    .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+    .returning({ userId: organizationMembers.userId });
+  return result.length > 0;
 }

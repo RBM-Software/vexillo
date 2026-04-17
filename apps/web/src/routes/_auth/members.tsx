@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, ChevronDown } from 'lucide-react'
+import { MoreHorizontal, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -43,9 +43,9 @@ function RemoveMemberDialog({
       await api.members.delete(orgSlug, member.id)
       onRemoved(member.id)
       onClose()
-      toast.success(`${member.name} removed`)
+      toast.success(`${member.name} suspended`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove member')
+      toast.error(err instanceof Error ? err.message : 'Failed to suspend member')
     } finally {
       setRemoving(false)
     }
@@ -55,9 +55,9 @@ function RemoveMemberDialog({
     <Dialog open onOpenChange={() => !removing && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Remove member?</DialogTitle>
+          <DialogTitle>Suspend member?</DialogTitle>
           <DialogDescription>
-            <strong>{member.name}</strong> ({member.email}) will lose access immediately.
+            <strong>{member.name}</strong> ({member.email}) will lose access immediately. You can restore them later.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -65,7 +65,7 @@ function RemoveMemberDialog({
             Cancel
           </Button>
           <Button variant="destructive" onClick={handleRemove} disabled={removing}>
-            {removing ? 'Removing…' : 'Remove member'}
+            {removing ? 'Suspending…' : 'Suspend member'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -174,15 +174,20 @@ function MemberRow({
 
       <div className="flex justify-start sm:justify-end">
         {isAdmin && !isSelf ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => onRemove(member)}
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-            aria-label={`Remove ${member.name}`}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              type="button"
+              className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'h-8 w-8')}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="sr-only">Open menu</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem variant="destructive" onClick={() => onRemove(member)}>
+                Suspend
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : (
           <span className="inline-flex h-8 w-8 items-center justify-center text-xs text-muted-foreground">
             —
@@ -202,9 +207,11 @@ export function MembersPage() {
   const currentUserId = session?.user?.id
 
   const [members, setMembers] = useState<Member[]>([])
+  const [removedMembers, setRemovedMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [removeTarget, setRemoveTarget] = useState<Member | null>(null)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!isAdmin) {
@@ -213,8 +220,12 @@ export function MembersPage() {
     }
     try {
       setError(null)
-      const result = await api.members.list(org.slug)
-      setMembers(result.members)
+      const [activeResult, removedResult] = await Promise.all([
+        api.members.list(org.slug),
+        api.members.listRemoved(org.slug),
+      ])
+      setMembers(activeResult.members)
+      setRemovedMembers(removedResult.members)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load members')
     } finally {
@@ -231,7 +242,23 @@ export function MembersPage() {
   }
 
   function handleRemoved(id: string) {
+    const member = members.find((m) => m.id === id)
     setMembers((prev) => prev.filter((m) => m.id !== id))
+    if (member) setRemovedMembers((prev) => [...prev, member])
+  }
+
+  async function handleRestore(member: Member) {
+    setRestoringId(member.id)
+    try {
+      await api.members.restore(org.slug, member.id)
+      setRemovedMembers((prev) => prev.filter((m) => m.id !== member.id))
+      setMembers((prev) => [...prev, { ...member, role: 'viewer' }])
+      toast.success(`${member.name} restored`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to restore member')
+    } finally {
+      setRestoringId(null)
+    }
   }
 
   return (
@@ -293,6 +320,38 @@ export function MembersPage() {
               onRemove={setRemoveTarget}
             />
           ))}
+        </div>
+      )}
+
+      {!loading && !error && isAdmin && removedMembers.length > 0 && (
+        <div className="mt-10">
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Suspended members</h2>
+          <div className="table-shell overflow-hidden">
+            {removedMembers.map((member) => (
+              <div
+                key={member.id}
+                className="grid grid-cols-1 gap-3 border-b border-border px-5 py-4 last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-6"
+              >
+                <div className="flex min-w-0 gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[0.75rem] font-medium text-muted-foreground uppercase select-none opacity-50">
+                    {member.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[0.9375rem] font-medium text-muted-foreground">{member.name}</p>
+                    <p className="mt-0.5 truncate text-[0.8125rem] text-muted-foreground">{member.email}</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleRestore(member)}
+                  disabled={restoringId === member.id}
+                >
+                  {restoringId === member.id ? 'Restoring…' : 'Restore'}
+                </Button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
