@@ -184,6 +184,11 @@ export function MembersPage() {
                       You
                     </Badge>
                   )}
+                  {isSelf && isSuperAdmin && (
+                    <Badge variant="secondary" className="h-5 px-1.5 text-[0.6875rem]">
+                      Super admin
+                    </Badge>
+                  )}
                 </div>
                 <p className="truncate text-xs text-muted-foreground">{member.email}</p>
               </div>
