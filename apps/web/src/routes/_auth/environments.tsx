@@ -1,8 +1,14 @@
-import { useState, type FormEvent } from 'react'
-import { Plus, RefreshCw, Trash2, X, Check, Copy } from 'lucide-react'
+import { useState, useMemo, useCallback, type FormEvent } from 'react'
+import { Plus, RefreshCw, MoreHorizontal, X, Check, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button } from '@/components/ui/button'
+import {
+  useReactTable,
+  getCoreRowModel,
+  flexRender,
+  type ColumnDef,
+} from '@tanstack/react-table'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +30,22 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 import { useOrg } from '@/lib/org-context'
 import { api, type EnvRow } from '@/lib/api-client'
 
@@ -128,15 +150,13 @@ function NewApiKeyDialog({ apiKey, onClose }: { apiKey: string; onClose: () => v
           <DialogTitle>API key generated</DialogTitle>
           <DialogDescription>Copy this key now — it will not be shown again.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <code className="flex-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs break-all">
-              {apiKey}
-            </code>
-            <Button size="sm" variant="outline" onClick={handleCopy} className="shrink-0">
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            </Button>
-          </div>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs break-all">
+            {apiKey}
+          </code>
+          <Button size="sm" variant="outline" onClick={handleCopy} className="shrink-0">
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          </Button>
         </div>
         <DialogFooter>
           <Button onClick={onClose}>Done</Button>
@@ -152,12 +172,10 @@ function AllowedOriginsEditor({
   orgSlug,
   env,
   onUpdated,
-  disabled,
 }: {
   orgSlug: string
   env: EnvRow
   onUpdated: (id: string, origins: string[]) => void
-  disabled: boolean
 }) {
   const [origins, setOrigins] = useState<string[]>(env.allowedOrigins)
   const [newOrigin, setNewOrigin] = useState('')
@@ -192,137 +210,82 @@ function AllowedOriginsEditor({
   }
 
   return (
-    <div className="space-y-2">
-      <p className="data-table-th text-left">Allowed origins</p>
+    <div className="space-y-3">
       {origins.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">None — all cross-origin requests blocked</p>
+        <p className="text-sm text-muted-foreground italic">
+          None — all cross-origin requests blocked
+        </p>
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {origins.map((origin) => (
             <Badge key={origin} variant="secondary" className="gap-1 font-mono text-[0.7rem]">
               {origin}
-              {!disabled && (
-                <button
-                  onClick={() => handleRemove(origin)}
-                  disabled={saving}
-                  className="ml-0.5 rounded hover:text-destructive focus-visible:outline-none"
-                  aria-label={`Remove ${origin}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
+              <button
+                onClick={() => handleRemove(origin)}
+                disabled={saving}
+                className="ml-0.5 rounded hover:text-destructive focus-visible:outline-none"
+                aria-label={`Remove ${origin}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
             </Badge>
           ))}
         </div>
       )}
-      {!disabled && (
-        <div className="mt-1 flex items-center gap-2">
-          <Input
-            value={newOrigin}
-            onChange={(e) => setNewOrigin(e.target.value)}
-            placeholder="https://example.com or *"
-            className="h-7 text-xs font-mono"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); handleAdd() }
-            }}
-            disabled={saving}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleAdd}
-            disabled={saving || !newOrigin.trim()}
-            className="h-7 shrink-0 px-2 text-xs"
-          >
-            Add
-          </Button>
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        <Input
+          value={newOrigin}
+          onChange={(e) => setNewOrigin(e.target.value)}
+          placeholder="https://example.com or *"
+          className="h-7 text-xs font-mono"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); handleAdd() }
+          }}
+          disabled={saving}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleAdd}
+          disabled={saving || !newOrigin.trim()}
+          className="h-7 shrink-0 px-2 text-xs"
+        >
+          Add
+        </Button>
+      </div>
     </div>
   )
 }
 
-// ── Environment card ──────────────────────────────────────────────────────────
+// ── Manage Origins Dialog ─────────────────────────────────────────────────────
 
-function EnvironmentCard({
+function ManageOriginsDialog({
   orgSlug,
   env,
-  isAdmin,
-  onRotateKey,
-  onDelete,
-  onOriginsUpdated,
+  open,
+  onOpenChange,
+  onUpdated,
 }: {
   orgSlug: string
-  env: EnvRow
-  isAdmin: boolean
-  onRotateKey: (apiKey: string) => void
-  onDelete: (env: EnvRow) => void
-  onOriginsUpdated: (id: string, origins: string[]) => void
+  env: EnvRow | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onUpdated: (id: string, origins: string[]) => void
 }) {
-  const [rotating, setRotating] = useState(false)
-
-  async function handleRotate() {
-    setRotating(true)
-    try {
-      const { apiKey: key } = await api.environments.rotateKey(orgSlug, env.id)
-      onRotateKey(key)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to rotate key')
-    } finally {
-      setRotating(false)
-    }
-  }
-
+  if (!env) return null
   return (
-    <div className="table-shell overflow-hidden">
-      <div className="flex flex-col gap-3 border-b border-border bg-muted/45 px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:bg-muted/15">
-        <div className="min-w-0 flex-1">
-          <p className="data-table-primary-label text-[0.9375rem]">{env.name}</p>
-          <p className="data-table-mono-meta mt-0.5">{env.slug}</p>
-        </div>
-        {isAdmin && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleRotate}
-              disabled={rotating}
-              className="gap-1.5 shadow-surface-xs"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${rotating ? 'animate-spin' : ''}`} />
-              Rotate key
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => onDelete(env)}
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-              aria-label={`Delete ${env.name}`}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-4 px-5 py-5 sm:px-6">
-        <div className="space-y-1">
-          <p className="data-table-th text-left">API key</p>
-          {env.keyHint ? (
-            <code className="font-mono text-xs text-foreground">{env.keyHint}</code>
-          ) : (
-            <p className="text-xs text-muted-foreground italic">No key — rotate to generate one</p>
-          )}
-        </div>
-
-        <AllowedOriginsEditor
-          orgSlug={orgSlug}
-          env={env}
-          onUpdated={onOriginsUpdated}
-          disabled={!isAdmin}
-        />
-      </div>
-    </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Allowed origins</DialogTitle>
+          <DialogDescription>
+            Control which origins can use the <strong>{env.name}</strong> SDK key.
+          </DialogDescription>
+        </DialogHeader>
+        <AllowedOriginsEditor orgSlug={orgSlug} env={env} onUpdated={onUpdated} />
+        <DialogFooter showCloseButton />
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -337,6 +300,8 @@ export function EnvironmentsPage() {
   const [pendingApiKey, setPendingApiKey] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<EnvRow | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [originsTarget, setOriginsTarget] = useState<EnvRow | null>(null)
+  const [rotatingId, setRotatingId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['environments', org.slug],
@@ -350,6 +315,18 @@ export function EnvironmentsPage() {
     setPendingApiKey(apiKey)
     toast.success(`Environment "${env.name}" created`)
   }
+
+  const handleRotate = useCallback(async (env: EnvRow) => {
+    setRotatingId(env.id)
+    try {
+      const { apiKey } = await api.environments.rotateKey(org.slug, env.id)
+      setPendingApiKey(apiKey)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to rotate key')
+    } finally {
+      setRotatingId(null)
+    }
+  }, [org.slug])
 
   async function handleDelete() {
     if (!deleteTarget) return
@@ -373,6 +350,86 @@ export function EnvironmentsPage() {
         old ? old.map((e) => (e.id === id ? { ...e, allowedOrigins: origins } : e)) : old,
     )
   }
+
+  const columns = useMemo<ColumnDef<EnvRow>[]>(
+    () => [
+      {
+        id: 'environment',
+        header: 'Environment',
+        size: 500,
+        cell: ({ row }) => {
+          const env = row.original
+          return (
+            <div className="space-y-1 py-0.5">
+              <p className="text-sm font-medium leading-none">{env.name}</p>
+              <p className="font-mono text-xs text-muted-foreground">{env.slug}</p>
+            </div>
+          )
+        },
+      },
+      {
+        id: 'apiKey',
+        header: 'API Key',
+        size: 260,
+        cell: ({ row }) => {
+          const { keyHint } = row.original
+          if (!keyHint) {
+            return <span className="text-xs italic text-muted-foreground">No key</span>
+          }
+          return <code className="font-mono text-xs text-foreground">{keyHint}</code>
+        },
+      },
+      {
+        id: 'actions',
+        enableHiding: false,
+        size: 140,
+        cell: ({ row }) => {
+          const env = row.original
+          if (!isAdmin) return null
+          const isRotating = rotatingId === env.id
+          return (
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleRotate(env)}
+                disabled={isRotating}
+                className="gap-1.5"
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', isRotating && 'animate-spin')} />
+                Rotate key
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  type="button"
+                  className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'h-8 w-8')}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                  <span className="sr-only">Open menu</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setOriginsTarget(env)}>
+                    Manage origins
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(env)}>
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )
+        },
+      },
+    ],
+    [isAdmin, rotatingId, handleRotate],
+  )
+
+  const table = useReactTable({
+    data: envs,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  })
 
   return (
     <div className="page-container page-container-wide page-enter">
@@ -418,18 +475,33 @@ export function EnvironmentsPage() {
       )}
 
       {!isLoading && !error && envs.length > 0 && (
-        <div className="space-y-6">
-          {envs.map((env) => (
-            <EnvironmentCard
-              key={env.id}
-              orgSlug={org.slug}
-              env={env}
-              isAdmin={isAdmin}
-              onRotateKey={setPendingApiKey}
-              onDelete={setDeleteTarget}
-              onOriginsUpdated={handleOriginsUpdated}
-            />
-          ))}
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id} style={{ width: header.getSize() }}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} style={{ width: cell.column.getSize() }}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
 
@@ -443,6 +515,14 @@ export function EnvironmentsPage() {
       {pendingApiKey && (
         <NewApiKeyDialog apiKey={pendingApiKey} onClose={() => setPendingApiKey(null)} />
       )}
+
+      <ManageOriginsDialog
+        orgSlug={org.slug}
+        env={originsTarget}
+        open={!!originsTarget}
+        onOpenChange={(open) => { if (!open) setOriginsTarget(null) }}
+        onUpdated={handleOriginsUpdated}
+      />
 
       <AlertDialog
         open={!!deleteTarget}
