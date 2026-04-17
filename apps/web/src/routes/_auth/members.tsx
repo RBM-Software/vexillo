@@ -110,7 +110,6 @@ export function MembersPage() {
   const { data: activeData, isLoading, error } = useQuery({
     queryKey: ['members', org.slug],
     queryFn: () => api.members.list(org.slug),
-    enabled: isAdmin,
   })
 
   const { data: removedData } = useQuery({
@@ -278,15 +277,6 @@ export function MembersPage() {
         </div>
       </div>
 
-      {!isAdmin && !isLoading && (
-        <div
-          className="mb-8 rounded-lg border border-border bg-muted/35 px-4 py-3 text-sm text-muted-foreground"
-          role="status"
-        >
-          Only admins can manage members.
-        </div>
-      )}
-
       {error && (
         <div
           className="mb-8 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive"
@@ -296,7 +286,7 @@ export function MembersPage() {
         </div>
       )}
 
-      {!isLoading && !error && isAdmin && membersList.length > 0 && (
+      {!isLoading && !error && membersList.length > 0 && (
         <div className="mb-4 flex items-center gap-2">
           <div className="relative max-w-sm flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -333,7 +323,7 @@ export function MembersPage() {
         </div>
       )}
 
-      {!isLoading && !error && isAdmin && membersList.length === 0 && (
+      {!isLoading && !error && membersList.length === 0 && (
         <div className="surface-card flex flex-col items-center justify-center px-6 py-16 text-center shadow-surface">
           <p className="mb-1 text-base font-medium text-foreground">No members yet</p>
           <p className="max-w-sm text-sm text-muted-foreground">
