@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, type FormEvent } from 'react'
+import { useState, useEffect, useMemo, useCallback, type FormEvent } from 'react'
 import { Plus, MoreHorizontal, X, Check, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -186,45 +186,18 @@ function NewApiKeyDialog({ apiKey, onClose }: { apiKey: string; onClose: () => v
 // ── Allowed Origins Editor ────────────────────────────────────────────────────
 
 function AllowedOriginsEditor({
-  orgSlug,
-  env,
-  onUpdated,
+  origins,
+  newOrigin,
+  onNewOriginChange,
+  onAdd,
+  onRemove,
 }: {
-  orgSlug: string
-  env: EnvRow
-  onUpdated: (id: string, origins: string[]) => void
+  origins: string[]
+  newOrigin: string
+  onNewOriginChange: (v: string) => void
+  onAdd: () => void
+  onRemove: (origin: string) => void
 }) {
-  const [origins, setOrigins] = useState<string[]>(env.allowedOrigins)
-  const [newOrigin, setNewOrigin] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const isDirty = origins.join('\n') !== env.allowedOrigins.join('\n')
-
-  function handleAdd() {
-    const trimmed = newOrigin.trim()
-    if (!trimmed || origins.includes(trimmed)) return
-    setOrigins((prev) => [...prev, trimmed])
-    setNewOrigin('')
-  }
-
-  function handleRemove(origin: string) {
-    setOrigins((prev) => prev.filter((o) => o !== origin))
-  }
-
-  async function handleSave() {
-    setSaving(true)
-    try {
-      await api.environments.patch(orgSlug, env.id, origins)
-      onUpdated(env.id, origins)
-      toast.success('Allowed origins saved')
-    } catch (err) {
-      setOrigins(env.allowedOrigins)
-      toast.error(err instanceof Error ? err.message : 'Failed to update allowed origins')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   return (
     <div className="space-y-3">
       {origins.length === 0 ? (
@@ -237,7 +210,7 @@ function AllowedOriginsEditor({
             <Badge key={origin} variant="secondary" className="gap-1 font-mono text-[0.7rem]">
               {origin}
               <button
-                onClick={() => handleRemove(origin)}
+                onClick={() => onRemove(origin)}
                 className="ml-0.5 rounded hover:text-destructive focus-visible:outline-none"
                 aria-label={`Remove ${origin}`}
               >
@@ -250,26 +223,21 @@ function AllowedOriginsEditor({
       <div className="flex items-center gap-2">
         <Input
           value={newOrigin}
-          onChange={(e) => setNewOrigin(e.target.value)}
+          onChange={(e) => onNewOriginChange(e.target.value)}
           placeholder="https://example.com or *"
           className="h-7 text-xs font-mono"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); handleAdd() }
+            if (e.key === 'Enter') { e.preventDefault(); onAdd() }
           }}
         />
         <Button
           size="sm"
           variant="outline"
-          onClick={handleAdd}
+          onClick={onAdd}
           disabled={!newOrigin.trim()}
           className="h-7 shrink-0 px-2 text-xs"
         >
           Add
-        </Button>
-      </div>
-      <div className="flex justify-end">
-        <Button size="sm" onClick={handleSave} disabled={!isDirty || saving}>
-          {saving ? 'Saving…' : 'Save'}
         </Button>
       </div>
     </div>
@@ -291,18 +259,66 @@ function ManageOriginsDialog({
   onOpenChange: (open: boolean) => void
   onUpdated: (id: string, origins: string[]) => void
 }) {
-  if (!env) return null
+  const [origins, setOrigins] = useState<string[]>(env?.allowedOrigins ?? [])
+  const [newOrigin, setNewOrigin] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (env) {
+      setOrigins(env.allowedOrigins)
+      setNewOrigin('')
+    }
+  }, [env])
+
+  const isDirty = origins.join('\n') !== (env?.allowedOrigins ?? []).join('\n')
+
+  function handleAdd() {
+    const trimmed = newOrigin.trim()
+    if (!trimmed || origins.includes(trimmed)) return
+    setOrigins((prev) => [...prev, trimmed])
+    setNewOrigin('')
+  }
+
+  function handleRemove(origin: string) {
+    setOrigins((prev) => prev.filter((o) => o !== origin))
+  }
+
+  async function handleSave() {
+    if (!env) return
+    setSaving(true)
+    try {
+      await api.environments.patch(orgSlug, env.id, origins)
+      onUpdated(env.id, origins)
+      toast.success('Allowed origins saved')
+    } catch (err) {
+      setOrigins(env.allowedOrigins)
+      toast.error(err instanceof Error ? err.message : 'Failed to update allowed origins')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Allowed origins</DialogTitle>
           <DialogDescription>
-            Control which origins can use the <strong>{env.name}</strong> SDK key.
+            Control which origins can use the <strong>{env?.name}</strong> SDK key.
           </DialogDescription>
         </DialogHeader>
-        <AllowedOriginsEditor orgSlug={orgSlug} env={env} onUpdated={onUpdated} />
-        <DialogFooter showCloseButton />
+        <AllowedOriginsEditor
+          origins={origins}
+          newOrigin={newOrigin}
+          onNewOriginChange={setNewOrigin}
+          onAdd={handleAdd}
+          onRemove={handleRemove}
+        />
+        <DialogFooter showCloseButton>
+          <Button onClick={handleSave} disabled={!isDirty || saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
