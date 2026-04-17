@@ -1,21 +1,35 @@
-MIT License
+RBM Accelerators License Agreement
+==================================
 
-Copyright (c) 2026 Bipin Rajbhar
+Copyright (c) 2026 RBM Software Private Limited, Pune, Maharashtra, India.
+All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This License Agreement ("Agreement") is entered into by and between RBM Software Private Limited ("Licensor") and you ("Licensee").
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Definitions.
+   - "Accelerators": Proprietary software modules, tools, or code for performance optimization (detailed in documentation or Exhibit A).
+   - "Software": Accelerators, binaries, source (if provided), and documentation.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2.⁠ ⁠License Grant.
+   RBM grants Licensee a non-exclusive, non-transferable, revocable license to RBMs customers as shared by RBM basis the contract signed between both parties
+
+3. Restrictions.
+   - No resale, sublicensing, or external distribution without consent.
+   - No reverse engineering, decompilation, or removal of notices.
+   - Comply with applicable laws (e.g., export controls).
+
+4. Ownership.
+   Licensor retains all intellectual property rights. Licensee assigns any improvements to Licensor.
+
+5. Disclaimer and Limitation of Liability.
+   SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY. LICENSOR DISCLAIMS ALL WARRANTIES. LIABILITY LIMITED TO FEES PAID.
+
+6. Termination.
+   Terminates on breach or Licensor notice. Destroy all copies upon termination.
+
+7. Governing Law.
+   Laws of India, courts in Pune.
+
+By using the Software, you accept these terms. For questions: legal@rbmsoftware.com.
+
+Version 1.0 - April 2026
