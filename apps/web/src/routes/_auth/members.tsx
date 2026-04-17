@@ -130,7 +130,9 @@ export function MembersPage() {
           return false
         }
       }
-      if (roleFilter !== 'all' && member.role !== roleFilter) return false
+      if (roleFilter === 'super_admin' && !member.isSuperAdmin) return false
+      if (roleFilter === 'admin' && (member.isSuperAdmin || member.role !== 'admin')) return false
+      if (roleFilter === 'viewer' && member.role !== 'viewer') return false
       return true
     })
   }, [membersList, searchQuery, roleFilter])
@@ -263,7 +265,10 @@ export function MembersPage() {
     getPaginationRowModel: getPaginationRowModel(),
   })
 
-  const roleFilterLabel = roleFilter === 'all' ? 'All' : roleFilter === 'admin' ? 'Admin' : 'Viewer'
+  const roleFilterLabel =
+    roleFilter === 'all' ? 'All' :
+    roleFilter === 'super_admin' ? 'Super admin' :
+    roleFilter === 'admin' ? 'Admin' : 'Viewer'
 
   return (
     <div className="page-container page-container-wide page-enter">
@@ -318,6 +323,7 @@ export function MembersPage() {
               <DropdownMenuContent align="end" className="min-w-32">
                 <DropdownMenuRadioGroup value={roleFilter} onValueChange={setRoleFilter}>
                   <DropdownMenuRadioItem value="all" closeOnClick>All</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="super_admin" closeOnClick>Super admin</DropdownMenuRadioItem>
                   <DropdownMenuRadioItem value="admin" closeOnClick>Admin</DropdownMenuRadioItem>
                   <DropdownMenuRadioItem value="viewer" closeOnClick>Viewer</DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
