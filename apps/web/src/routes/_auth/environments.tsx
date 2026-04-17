@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, type FormEvent } from 'react'
-import { Plus, RefreshCw, MoreHorizontal, X, Check, Copy } from 'lucide-react'
+import { Plus, MoreHorizontal, X, Check, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -399,7 +399,6 @@ export function EnvironmentsPage() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => handleRotate(env)} disabled={isRotating}>
-                    <RefreshCw className={cn('h-4 w-4', isRotating && 'animate-spin')} />
                     Rotate key
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setOriginsTarget(env)}>
