@@ -59,6 +59,23 @@ Within `/api/dashboard/*`, most endpoints require an active org session. Role-sp
 - **Admins** — manage flags, environments, API keys, view suspended members, and change member roles (cannot change super-admin roles)
 - **Super-admins** — suspend/restore members, manage orgs
 
+## Caching
+
+Two layers of caching apply to the SDK flags endpoint:
+
+| Layer | Where | TTL | Details |
+|-------|-------|-----|---------|
+| In-process LRU | API container | 5 s | `createFlagCache()` (`lib/flag-cache.ts`) — up to 500 environments, keyed by `environmentId`. Avoids a DB round-trip on every request. |
+| HTTP / CDN | Browser + CloudFront | 30 s fresh, 60 s stale | `Cache-Control: s-maxage=30, stale-while-revalidate=60` on `GET /api/sdk/flags` responses. CloudFront caches per `Authorization` header. |
+
+The OpenAPI spec is also cached at the HTTP layer:
+
+| Route | Cache-Control |
+|-------|---------------|
+| `GET /api/openapi.json` | `public, max-age=300, stale-while-revalidate=60` |
+
+All other routes (`/api/auth/*`, `/api/dashboard/*`, `/api/superadmin/*`) are uncached — they carry session state or mutate data.
+
 ## Auth
 
 Authentication is per-org — each organisation configures its own Okta OIDC app. Members sign in through their org's Okta tenant via a PKCE flow. There is no global sign-in page.
