@@ -43,7 +43,7 @@ Run these from the repo root with `pnpm --filter @vexillo/db <script>`.
 |-------|-------------|
 | `environments` | Deployment environments per org (e.g. production, staging) |
 | `flags` | Feature flag definitions per org |
-| `flag_states` | Enabled/disabled state per flag per environment |
+| `flag_states` | Enabled/disabled state per flag per environment, with an optional `allowedCountries` array for geo-targeting |
 | `api_keys` | Hashed API keys for SDK access, scoped to an environment |
 
 **Audit**

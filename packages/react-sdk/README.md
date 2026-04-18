@@ -103,10 +103,12 @@ export default function App() {
 
 **How it works**
 
-- On mount the provider calls `client.connectStream()`, which opens a `fetch`-based SSE connection to `/api/sdk/flags/stream`.
-- The server immediately sends the full flag snapshot, then pushes a new snapshot whenever a flag is toggled.
+- On mount the provider calls `client.connectStream()`.
+- Before opening the SSE connection, the client fetches flags via `GET /api/sdk/flags` (CDN-cached, typically resolves in under 50 ms). This means `isReady` becomes `true` and components render with real flag values before the SSE handshake completes.
+- Once the SSE connection is established, the server immediately sends the full flag snapshot, overwriting the cached REST response with the authoritative live state.
+- The server pushes a new snapshot whenever a flag is toggled.
 - The connection sends a keepalive comment every 25 seconds so proxies and firewalls don't close idle connections.
-- If the connection drops, the client reconnects automatically with exponential backoff (base delay controlled by the server's `retry:` field, up to 30 s).
+- If the connection drops, the client reconnects automatically with exponential backoff (base delay controlled by the server's `retry:` field, up to 30 s). The REST prefetch is skipped on reconnects — flags are already known.
 - On every reconnect the client sends a `Last-Event-ID` header so the server can continue the event ID sequence.
 - On unmount the provider closes the connection cleanly.
 
@@ -185,6 +187,8 @@ export function CheckoutButton() {
   return newCheckout ? <NewCheckout /> : <OldCheckout />;
 }
 ```
+
+> When `initialFlags` is provided and `streaming` is also set, `connectStream()` skips the REST prefetch (flags are already ready) and opens the SSE connection directly.
 
 ---
 
@@ -305,7 +309,7 @@ afterEach(() => {
 | `apiKey` | `string` | Yes | API key for authentication |
 | `initialFlags` | `Record<string, boolean>` | No | Pre-seed flags and skip the initial fetch |
 | `fallbacks` | `Record<string, boolean>` | No | Default values for unknown keys |
-| `onError` | `(err: Error) => void` | No | Called when `load()` fails |
+| `onError` | `(err: Error) => void` | No | Called when `load()` or `connectStream()` encounters an error |
 
 ### `<VexilloClientProvider>`
 
@@ -342,10 +346,10 @@ Low-level fetch helper. Returns a flat `Record<string, boolean>`, or an empty ob
 
 | Member | Type | Description |
 |---|---|---|
-| `isReady` | `boolean` | `true` once `load()` has resolved or `initialFlags` was provided |
-| `lastError` | `Error \| null` | The error from the most recent failed `load()`, or `null` |
+| `isReady` | `boolean` | `true` once flags have been loaded — either from `initialFlags`, a `load()` call, the REST prefetch inside `connectStream()`, or the first SSE snapshot |
+| `lastError` | `Error \| null` | The error from the most recent failed `load()` or stream attempt, or `null` |
 | `load()` | `() => Promise<void>` | Fetches flags from the API. Called automatically by `<VexilloClientProvider>` on mount (unless `streaming` is set) |
-| `connectStream()` | `() => () => void` | Opens a persistent SSE connection. Returns a disconnect function. Called automatically by `<VexilloClientProvider streaming>` |
+| `connectStream()` | `() => () => void` | Fetches flags via REST, then opens a persistent SSE connection for real-time updates. Returns a disconnect function. Called automatically by `<VexilloClientProvider streaming>` |
 | `getFlag(key)` | `(key: string) => boolean` | Synchronous flag read |
 | `getAllFlags()` | `() => Record<string, boolean>` | Snapshot of all resolved flags |
 | `override(flags)` | `(flags: Record<string, boolean>) => void` | Force flag values and notify subscribers |
@@ -365,7 +369,7 @@ Low-level fetch helper. Returns a flat `Record<string, boolean>`, or an empty ob
 
 ## Error handling
 
-`load()` failures (network errors, non-2xx responses) are caught silently — flags will never crash your app. When a load fails:
+`load()` and `connectStream()` failures (network errors, non-2xx responses) are caught silently — flags will never crash your app. When a load fails:
 
 - `useFlag` falls back to `fallbacks[key] ?? false`
 - `client.lastError` is set to the error

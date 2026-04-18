@@ -41,9 +41,9 @@ Dashboard runs at `http://localhost:5173`.
 |------|--------|-------------|
 | `/` | Public | Workspace finder — enter an org slug to navigate to it |
 | `/org/:slug/sign-in` | Public | Org-specific sign-in via Okta |
-| `/org/:slug/flags` | Org member | Feature flags list with per-environment status |
+| `/org/:slug/flags` | Org member | Feature flags list with per-environment status and geo-targeting rules |
 | `/org/:slug/environments` | Org member | Environments, API key hints, and allowed origins |
-| `/org/:slug/members` | Org member | Members list (read-only for viewers, managed by super admins) |
+| `/org/:slug/members` | Org member | Members list (read-only for viewers, managed by admins) |
 | `/org/:slug/admin` | Super-admin | Org list |
 | `/org/:slug/admin/orgs/new` | Super-admin | Create an org |
 | `/org/:slug/admin/orgs/:orgSlug` | Super-admin | Org detail — edit Okta config, suspend/activate |

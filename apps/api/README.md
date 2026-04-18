@@ -63,7 +63,7 @@ Within `/api/dashboard/*`, most endpoints require an active org session. Role-sp
 
 ## Caching
 
-**Dashboard service** caches flags, environments, and members in-process (LRU, 30s TTL, keyed by `orgId`) with write-through invalidation on every mutation.
+**Dashboard service** caches flags, environments, and members in-process (LRU, 30 s TTL, keyed by `orgId`) with write-through invalidation on every mutation.
 
 **SDK routes** maintain two additional in-process caches to minimise DB round-trips on SSE connects:
 
@@ -74,11 +74,15 @@ Within `/api/dashboard/*`, most endpoints require an active org session. Role-sp
 
 On a warm connection (same API key, at least one recent toggle) SSE stream connect time drops from ~150 ms to under 20 ms.
 
-| Route | Cache-Control |
-|-------|---------------|
-| `GET /api/openapi.json` | `public, max-age=300, stale-while-revalidate=60` |
-| `GET /api/sdk/flags` | `no-store` — always fresh from DB |
-| `GET /api/sdk/flags/stream` | `no-cache` — SSE stream, in-process auth/snapshot caches apply |
+**CloudFront** caches `GET /api/sdk/flags` for 5 minutes (300 s default TTL, 600 s max TTL), keyed on `Authorization` and `CloudFront-Viewer-Country` so each API key + viewer country combination gets its own cache entry. The origin also sends `Cache-Control: s-maxage=300, stale-while-revalidate=60` to align intermediate caches with the CloudFront policy.
+
+| Route | Cache-Control (origin) | CloudFront TTL |
+|-------|------------------------|----------------|
+| `GET /api/openapi.json` | `public, max-age=300, stale-while-revalidate=60` | Not cached (dashboard policy) |
+| `GET /api/sdk/flags` | `s-maxage=300, stale-while-revalidate=60` | 5 min (300 s default) |
+| `GET /api/sdk/flags/stream` | `no-cache` | Not cached (TTL=0 stream policy) |
+
+> SDK clients using `connectStream()` fetch `GET /api/sdk/flags` first (CDN cache hit, typically < 50 ms) to populate flags immediately, then open the SSE connection for real-time updates. The SSE snapshot overwrites the cached REST response once the stream connects.
 
 ## Auth
 
