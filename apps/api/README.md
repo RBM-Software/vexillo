@@ -63,12 +63,22 @@ Within `/api/dashboard/*`, most endpoints require an active org session. Role-sp
 
 ## Caching
 
-The dashboard service caches flags, environments, and members in-process (LRU, 30s TTL, keyed by `orgId`) with write-through invalidation on every mutation. All other routes are uncached.
+**Dashboard service** caches flags, environments, and members in-process (LRU, 30s TTL, keyed by `orgId`) with write-through invalidation on every mutation.
+
+**SDK routes** maintain two additional in-process caches to minimise DB round-trips on SSE connects:
+
+| Cache | Key | TTL | Description |
+|-------|-----|-----|-------------|
+| Auth cache | API key hash | 30 s | Resolved `environmentId`, `orgId`, `allowedOrigins`, and org status. Shared by `GET /flags` and `GET /flags/stream`. |
+| Snapshot cache | `environmentId` | 30 s | Full flag snapshot JSON. Kept warm by `notifyFlagChange` on every toggle — subsequent SSE connects skip the DB entirely. |
+
+On a warm connection (same API key, at least one recent toggle) SSE stream connect time drops from ~150 ms to under 20 ms.
 
 | Route | Cache-Control |
 |-------|---------------|
 | `GET /api/openapi.json` | `public, max-age=300, stale-while-revalidate=60` |
 | `GET /api/sdk/flags` | `no-store` — always fresh from DB |
+| `GET /api/sdk/flags/stream` | `no-cache` — SSE stream, in-process auth/snapshot caches apply |
 
 ## Auth
 
