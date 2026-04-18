@@ -1,9 +1,32 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { eq, and, asc, sql } from 'drizzle-orm';
-import { apiKeys, environments, organizations, flags, flagStates } from '@vexillo/db';
+import { apiKeys, environments, organizations, flags, flagStates, queryEnvironmentFlagStates } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import { hashKey } from '../lib/api-key';
-import { createFlagCache } from '../lib/flag-cache';
+
+// ── Stream registry ───────────────────────────────────────────────────────────
+
+type FlagEvent = { flags: { key: string; enabled: boolean }[] };
+
+export class StreamRegistry {
+  private streams = new Map<string, Set<(event: FlagEvent) => void>>();
+
+  register(environmentId: string, send: (event: FlagEvent) => void): () => void {
+    let set = this.streams.get(environmentId);
+    if (!set) { set = new Set(); this.streams.set(environmentId, set); }
+    set.add(send);
+    return () => {
+      set!.delete(send);
+      if (set!.size === 0) this.streams.delete(environmentId);
+    };
+  }
+
+  broadcast(environmentId: string, event: FlagEvent): void {
+    const set = this.streams.get(environmentId);
+    if (!set) return;
+    for (const send of set) send(event);
+  }
+}
 
 // CORS headers used on pre-env-lookup error responses (401, env-not-found 403).
 // We use * here because we don't yet know the environment's allowedOrigins, but
@@ -77,31 +100,29 @@ const getFlagsStreamRoute = createRoute({
   method: 'get',
   path: '/flags/stream',
   operationId: 'getFlagsStream',
-  summary: 'Feature flag SSE stream (keepalive stub)',
+  summary: 'Feature flag SSE stream',
   security: [{ BearerAuth: [] }],
   description:
-    'Server-sent events stream. Currently a stub that emits a keepalive comment ' +
-    '(`: keepalive`) every 25 seconds to prevent CloudFront from closing the idle ' +
-    'connection (CloudFront read timeout is 60 s). Does not yet emit flag data.',
+    'Server-sent events stream. Emits the full flag snapshot immediately on connect, ' +
+    'then pushes a new snapshot whenever a flag is toggled. Keepalive comments are sent ' +
+    'every 25 seconds to prevent the CloudFront read timeout (60 s) from closing the connection.',
   responses: {
     200: {
       content: {
         'text/event-stream': {
-          schema: z.string().openapi({ example: ': keepalive' }),
+          schema: z.string().openapi({ example: 'data: {"flags":[{"key":"my-flag","enabled":true}]}' }),
         },
       },
       description:
-        'SSE stream. Content-Type: text/event-stream; Cache-Control: no-cache; ' +
-        'Connection: keep-alive; Access-Control-Allow-Origin: *',
+        'SSE stream. Each event is a JSON object: data: {"flags":[{"key":string,"enabled":boolean}]}',
     },
   },
 });
 
 // ── Router factory ────────────────────────────────────────────────────────────
 
-export function createSdkRouter(db: DbClient) {
+export function createSdkRouter(db: DbClient, streamRegistry: StreamRegistry) {
   const sdk = new OpenAPIHono();
-  const flagCache = createFlagCache();
 
   // Register Bearer auth security scheme so it appears in the generated spec.
   sdk.openAPIRegistry.registerComponent('securitySchemes', 'BearerAuth', {
@@ -155,29 +176,7 @@ export function createSdkRouter(db: DbClient) {
       return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
     }
 
-    // Serve from in-process cache when available; flags change infrequently
-    // and s-maxage=30 on the response already tolerates short staleness.
-    let flagRows = flagCache.get(auth.environmentId);
-
-    if (!flagRows) {
-      flagRows = await db
-        .select({
-          key: flags.key,
-          enabled: sql<boolean>`COALESCE(${flagStates.enabled}, false)`,
-        })
-        .from(flags)
-        .leftJoin(
-          flagStates,
-          and(
-            eq(flagStates.flagId, flags.id),
-            eq(flagStates.environmentId, auth.environmentId),
-          ),
-        )
-        .where(eq(flags.orgId, auth.orgId))
-        .orderBy(asc(flags.key));
-
-      flagCache.set(auth.environmentId, flagRows);
-    }
+    const flagRows = await queryEnvironmentFlagStates(db, auth.orgId, auth.environmentId);
 
     const headers = {
       'Access-Control-Allow-Origin': allowedOrigin,
@@ -193,28 +192,62 @@ export function createSdkRouter(db: DbClient) {
     );
   });
 
-  sdk.openapi(getFlagsStreamRoute, (c) => {
+  sdk.openapi(getFlagsStreamRoute, async (c) => {
+    const authHeader = c.req.header('authorization');
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return c.json({ error: 'Unauthorized' }, 401, SDK_ERROR_CORS_HEADERS);
+
+    const hash = await hashKey(token);
+    const [auth] = await db
+      .select({
+        environmentId: apiKeys.environmentId,
+        orgId: environments.orgId,
+        allowedOrigins: environments.allowedOrigins,
+        orgStatus: organizations.status,
+      })
+      .from(apiKeys)
+      .innerJoin(environments, eq(environments.id, apiKeys.environmentId))
+      .innerJoin(organizations, eq(organizations.id, environments.orgId))
+      .where(eq(apiKeys.keyHash, hash))
+      .limit(1);
+
+    if (!auth) return c.json({ error: 'Unauthorized' }, 401, SDK_ERROR_CORS_HEADERS);
+    if (auth.orgStatus === 'suspended') return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
+
+    const requestOrigin = c.req.header('origin');
+    const allowedOrigin = resolveAllowedOrigin(requestOrigin, auth.allowedOrigins);
+    if (allowedOrigin === null) return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
+
+    const initialFlags = await queryEnvironmentFlagStates(db, auth.orgId, auth.environmentId);
+
     const encoder = new TextEncoder();
+    let deregister: (() => void) | null = null;
     let interval: ReturnType<typeof setInterval>;
 
     const body = new ReadableStream({
       start(controller) {
-        const send = () =>
-          controller.enqueue(encoder.encode(': keepalive\n\n'));
-        send();
-        interval = setInterval(send, 25_000);
+        const send = (event: FlagEvent) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          } catch { /* stream already closed */ }
+        };
+
+        send({ flags: initialFlags });
+        deregister = streamRegistry.register(auth.environmentId, send);
+        interval = setInterval(() => {
+          try { controller.enqueue(encoder.encode(': keepalive\n\n')); }
+          catch { clearInterval(interval); }
+        }, 25_000);
 
         c.req.raw.signal.addEventListener('abort', () => {
           clearInterval(interval);
-          try {
-            controller.close();
-          } catch {
-            // already closed
-          }
+          deregister?.();
+          try { controller.close(); } catch { /* already closed */ }
         });
       },
       cancel() {
         clearInterval(interval);
+        deregister?.();
       },
     });
 
@@ -223,7 +256,7 @@ export function createSdkRouter(db: DbClient) {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': allowedOrigin,
       },
     });
   });

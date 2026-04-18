@@ -1,4 +1,5 @@
 import type { DbClient } from '@vexillo/db';
+import type { StreamRegistry } from '../routes/sdk';
 import {
   queryUserOrgs,
   queryOrgBySlug,
@@ -24,6 +25,7 @@ import {
   queryRemovedOrgMembers,
   queryUserIsSuperAdmin,
   insertAuditLog,
+  queryEnvironmentFlagStates,
   type FlagWithStates,
   type EnvRef,
   type EnvironmentWithKey,
@@ -136,7 +138,7 @@ export interface DashboardService {
 
 // ── Implementation ─────────────────────────────────────────────────────────────
 
-export function createDashboardService(db: DbClient): DashboardService {
+export function createDashboardService(db: DbClient, streamRegistry: StreamRegistry): DashboardService {
   return {
     async resolveOrgContext(slug, userId) {
       const org = await queryOrgBySlug(db, slug);
@@ -193,6 +195,8 @@ export function createDashboardService(db: DbClient): DashboardService {
       const result = await toggleFlag(db, orgId, key, environmentId);
       if (!result) throw new NotFoundError('Flag not found');
       await insertAuditLog(db, { orgId, actorId, action: 'flag.toggle', targetType: 'flag', targetId: key, metadata: { key, environmentId, enabled: result.enabled } });
+      const flagRows = await queryEnvironmentFlagStates(db, orgId, environmentId);
+      streamRegistry.broadcast(environmentId, { flags: flagRows });
       return result;
     },
 
