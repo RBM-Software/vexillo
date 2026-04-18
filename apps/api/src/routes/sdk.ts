@@ -3,6 +3,7 @@ import { eq, and, asc, sql } from 'drizzle-orm';
 import { apiKeys, environments, organizations, flags, flagStates } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import { hashKey } from '../lib/api-key';
+import type { StreamRegistry } from '../lib/stream-registry';
 
 // CORS headers used on pre-env-lookup error responses (401, env-not-found 403).
 // We use * here because we don't yet know the environment's allowedOrigins, but
@@ -75,7 +76,7 @@ const getFlagsRoute = createRoute({
 
 // ── Router factory ────────────────────────────────────────────────────────────
 
-export function createSdkRouter(db: DbClient) {
+export function createSdkRouter(db: DbClient, streamRegistry?: StreamRegistry) {
   const sdk = new OpenAPIHono();
 
   // Register Bearer auth security scheme so it appears in the generated spec.
@@ -274,12 +275,21 @@ export function createSdkRouter(db: DbClient) {
       start(controller) {
         controller.enqueue(encoder.encode(`data: ${snapshot}\n\n`));
 
+        // Register with the stream registry to receive Redis-pushed snapshots.
+        let unregisterStream: (() => void) | undefined;
+        if (streamRegistry) {
+          unregisterStream = streamRegistry.register(env.id, (payload) => {
+            controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+          });
+        }
+
         keepaliveInterval = setInterval(() => {
           controller.enqueue(encoder.encode(': keepalive\n\n'));
         }, 25_000);
 
         c.req.raw.signal.addEventListener('abort', () => {
           clearInterval(keepaliveInterval);
+          unregisterStream?.();
           try {
             controller.close();
           } catch {

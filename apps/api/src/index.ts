@@ -8,6 +8,8 @@ import { createSuperAdminRouter } from './routes/superadmin';
 import { createOrgOAuthRouter } from './routes/org-oauth';
 import { createAuth } from './lib/auth';
 import { createDashboardService } from './services/dashboard-service';
+import { createRedisClients } from './lib/redis';
+import { createStreamRegistry } from './lib/stream-registry';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -17,6 +19,13 @@ if (!DATABASE_URL) {
 const db = createDbClient(DATABASE_URL, { max: 10 });
 const auth = createAuth(db);
 const dashboardService = createDashboardService(db);
+
+// Optional Redis: enables cross-container SSE fan-out. Omit REDIS_URL to run
+// single-container (stream still works; toggles reach only local connections).
+const REDIS_URL = process.env.REDIS_URL;
+const streamRegistry = REDIS_URL
+  ? createStreamRegistry(createRedisClients(REDIS_URL).subscriber)
+  : undefined;
 
 const app = new Hono();
 
@@ -57,7 +66,7 @@ app.route('/api/auth/org-oauth', createOrgOAuthRouter(db, auth));
 app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
 
 // SDK routes — public, CORS *, CDN-cacheable
-const sdkRouter = createSdkRouter(db);
+const sdkRouter = createSdkRouter(db, streamRegistry);
 app.route('/api/sdk', sdkRouter);
 
 // OpenAPI spec + interactive docs (unauthenticated; internal use only)
