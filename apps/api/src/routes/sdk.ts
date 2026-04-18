@@ -1,6 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { eq, and, asc, sql } from 'drizzle-orm';
-import { apiKeys, environments, organizations, flags, flagStates } from '@vexillo/db';
+import { apiKeys, environments, organizations, flags, flagStates, queryEnvironmentFlagStates } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import { hashKey } from '../lib/api-key';
 import type { StreamRegistry } from '../lib/stream-registry';
@@ -73,7 +73,6 @@ const getFlagsRoute = createRoute({
   },
 });
 
-
 // ── Router factory ────────────────────────────────────────────────────────────
 
 export function createSdkRouter(db: DbClient, streamRegistry?: StreamRegistry) {
@@ -135,68 +134,46 @@ export function createSdkRouter(db: DbClient, streamRegistry?: StreamRegistry) {
 
     const hash = await hashKey(token);
 
-    const [apiKey] = await db
-      .select({ environmentId: apiKeys.environmentId })
-      .from(apiKeys)
-      .where(eq(apiKeys.keyHash, hash))
-      .limit(1);
-
-    if (!apiKey) {
-      return c.json({ error: 'Unauthorized' }, 401, SDK_ERROR_CORS_HEADERS);
-    }
-
-    const [env] = await db
+    // Single query: resolve API key → environment → org in one round-trip.
+    const [auth] = await db
       .select({
-        id: environments.id,
+        environmentId: apiKeys.environmentId,
+        orgId: environments.orgId,
         allowedOrigins: environments.allowedOrigins,
         orgStatus: organizations.status,
       })
-      .from(environments)
+      .from(apiKeys)
+      .innerJoin(environments, eq(environments.id, apiKeys.environmentId))
       .innerJoin(organizations, eq(organizations.id, environments.orgId))
-      .where(eq(environments.id, apiKey.environmentId))
+      .where(eq(apiKeys.keyHash, hash))
       .limit(1);
 
-    if (!env) {
+    if (!auth) {
+      return c.json({ error: 'Unauthorized' }, 401, SDK_ERROR_CORS_HEADERS);
+    }
+
+    if (auth.orgStatus === 'suspended') {
       return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
     }
 
-    if (env.orgStatus === 'suspended') {
-      return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
-    }
-
-    // Enforce per-environment CORS allowlist.
     const requestOrigin = c.req.header('origin');
-    const allowedOrigin = resolveAllowedOrigin(requestOrigin, env.allowedOrigins);
+    const allowedOrigin = resolveAllowedOrigin(requestOrigin, auth.allowedOrigins);
 
     if (allowedOrigin === null) {
-      // Origin is present but not in the allowlist — block the request.
       return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
     }
 
-    const rows = await db
-      .select({
-        key: flags.key,
-        enabled: sql<boolean>`COALESCE(${flagStates.enabled}, false)`,
-      })
-      .from(flags)
-      .leftJoin(
-        flagStates,
-        and(
-          eq(flagStates.flagId, flags.id),
-          eq(flagStates.environmentId, apiKey.environmentId),
-        ),
-      )
-      .orderBy(asc(flags.key));
+    const flagRows = await queryEnvironmentFlagStates(db, auth.orgId, auth.environmentId);
 
     const headers = {
       'Access-Control-Allow-Origin': allowedOrigin,
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
       'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-      'Cache-Control': 's-maxage=30, stale-while-revalidate=60',
+      'Cache-Control': 'no-store',
     };
 
     return c.json(
-      { flags: rows.map((r) => ({ key: r.key, enabled: r.enabled })) },
+      { flags: flagRows.map((r) => ({ key: r.key, enabled: r.enabled })) },
       200,
       headers,
     );
@@ -347,6 +324,12 @@ export function createSdkRouter(db: DbClient, streamRegistry?: StreamRegistry) {
 // OpenAPI document config — shared between index.ts and tests.
 // Note: `components` (incl. securitySchemes) cannot go here; they are
 // registered via openAPIRegistry inside createSdkRouter.
+//
+// APP_URL controls the server origin shown in Scalar's "Try it out" panel.
+// Set it to the CloudFront domain in production so requests hit AWS directly.
+// Falls back to a relative path so local dev works without configuration.
+const appUrl = process.env.APP_URL?.replace(/\/$/, '') ?? '';
+
 export const SDK_OPENAPI_CONFIG = {
   openapi: '3.0.0' as const,
   info: {
@@ -355,5 +338,5 @@ export const SDK_OPENAPI_CONFIG = {
     description:
       'Feature flag SDK API. Authenticate via `Authorization: Bearer <api-key>`.',
   },
-  servers: [{ url: '/api/sdk' }],
+  servers: [{ url: `${appUrl}/api/sdk` }],
 };

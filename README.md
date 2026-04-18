@@ -6,7 +6,7 @@ Self-hosted feature flag service. Manage flags per environment and organisation,
 
 | Package | Description |
 |---------|-------------|
-| `apps/api` | Hono API (Bun runtime) — auth, dashboard, SDK, and super-admin endpoints; Okta JIT member provisioning |
+| `apps/api` | Hono API (Bun runtime) — auth, dashboard, SDK, and super-admin endpoints; Okta JIT member provisioning. Interactive docs at `/api/docs` |
 | `apps/web` | Vite + React dashboard — org management, flags, environments, and members |
 | `packages/db` | Drizzle ORM schema + PostgreSQL migrations |
 | `packages/react-sdk` | `@vexillo/react-sdk` — React bindings for consuming flags in any app |
@@ -75,8 +75,8 @@ Then:
 | Role | Capabilities |
 |------|-------------|
 | Viewer | Read flags, environments, and members |
-| Admin | All viewer permissions + manage flags, environments, and API keys |
-| Super-admin | All admin permissions + change member roles, suspend/restore members, manage orgs |
+| Admin | All viewer permissions + manage flags, environments, API keys, and change member roles (except super-admin roles) |
+| Super-admin | All admin permissions + suspend/restore members, manage orgs |
 
 ## Scripts
 
