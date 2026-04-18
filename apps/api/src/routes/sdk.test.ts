@@ -45,6 +45,17 @@ function makeSdkQueueDb(results: unknown[][]) {
   return chain as unknown as Parameters<typeof createSdkRouter>[0];
 }
 
+// Convenience: a valid merged auth row for env-1 / org-1.
+function authRow(overrides: Record<string, unknown> = {}) {
+  return {
+    environmentId: 'env-1',
+    orgId: 'org-1',
+    allowedOrigins: [],
+    orgStatus: 'active',
+    ...overrides,
+  };
+}
+
 function makeApp(db: Parameters<typeof createSdkRouter>[0]) {
   const app = new Hono();
   app.get('/health', (c) => c.json({ status: 'ok' }));
@@ -93,7 +104,7 @@ describe('GET /api/sdk/flags', () => {
   });
 
   it('returns 401 when Bearer token is not found in DB', async () => {
-    // DB returns empty array for api key lookup → 401
+    // Merged auth query returns empty array → 401
     const app = makeApp(makeMockDb());
     const res = await app.fetch(
       new Request('http://localhost/api/sdk/flags', {
@@ -109,11 +120,11 @@ describe('GET /api/sdk/flags', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
   });
 
-  it('returns 403 when API key is valid but environment no longer exists', async () => {
-    // Queue: apiKey lookup returns a match, environment lookup returns empty.
+  it('returns 401 when API key or environment is not found', async () => {
+    // Merged auth query (apiKey JOIN env JOIN org) returns empty when any
+    // part of the chain is missing — indistinguishable at the query level.
     const db = makeSdkQueueDb([
-      [{ environmentId: 'env-1' }], // apiKeys query
-      [],                            // environments+org query → 403
+      [], // merged auth query → not found
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
@@ -121,14 +132,13 @@ describe('GET /api/sdk/flags', () => {
         headers: { Authorization: 'Bearer sdk-validkey' },
       }),
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
   });
 
   it('returns 403 when the organization is suspended', async () => {
     const db = makeSdkQueueDb([
-      [{ environmentId: 'env-1' }],                                          // apiKeys query
-      [{ id: 'env-1', allowedOrigins: [], orgStatus: 'suspended' }],        // environments+org query
+      [authRow({ orgStatus: 'suspended' })], // merged auth query
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
@@ -143,9 +153,8 @@ describe('GET /api/sdk/flags', () => {
   it('returns 200 with flag states, CORS *, and Cache-Control on a valid key (no Origin header)', async () => {
     // No Origin header → server/script request → always allowed, CORS * returned.
     const db = makeSdkQueueDb([
-      [{ environmentId: 'env-1' }],                                    // apiKeys
-      [{ id: 'env-1', allowedOrigins: [] }],                           // environments
-      [{ key: 'feature-a', enabled: true }, { key: 'feature-b', enabled: false }], // flags
+      [authRow()],                                                                          // merged auth
+      [{ key: 'feature-a', enabled: true }, { key: 'feature-b', enabled: false }],        // flags
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
@@ -165,9 +174,8 @@ describe('GET /api/sdk/flags', () => {
 
   it('returns an empty flags array when no flags exist', async () => {
     const db = makeSdkQueueDb([
-      [{ environmentId: 'env-1' }],
-      [{ id: 'env-1', allowedOrigins: [] }],
-      [], // no flags
+      [authRow()], // merged auth
+      [],          // flags (empty)
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
@@ -184,8 +192,7 @@ describe('GET /api/sdk/flags', () => {
 
   it('returns 403 when Origin is present but allowedOrigins is empty', async () => {
     const db = makeSdkQueueDb([
-      [{ environmentId: 'env-1' }],
-      [{ id: 'env-1', allowedOrigins: [] }],
+      [authRow()], // merged auth, allowedOrigins: []
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
@@ -201,8 +208,7 @@ describe('GET /api/sdk/flags', () => {
 
   it('returns 403 when Origin is not in the allowedOrigins list', async () => {
     const db = makeSdkQueueDb([
-      [{ environmentId: 'env-1' }],
-      [{ id: 'env-1', allowedOrigins: ['https://allowed.com'] }],
+      [authRow({ allowedOrigins: ['https://allowed.com'] })], // merged auth
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
@@ -218,9 +224,8 @@ describe('GET /api/sdk/flags', () => {
 
   it('reflects the matching origin back when it is in allowedOrigins', async () => {
     const db = makeSdkQueueDb([
-      [{ environmentId: 'env-1' }],
-      [{ id: 'env-1', allowedOrigins: ['https://myapp.com'] }],
-      [],
+      [authRow({ allowedOrigins: ['https://myapp.com'] })], // merged auth
+      [],                                                    // flags
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
@@ -237,9 +242,8 @@ describe('GET /api/sdk/flags', () => {
 
   it('returns * when allowedOrigins contains the wildcard and Origin is present', async () => {
     const db = makeSdkQueueDb([
-      [{ environmentId: 'env-1' }],
-      [{ id: 'env-1', allowedOrigins: ['*'] }],
-      [],
+      [authRow({ allowedOrigins: ['*'] })], // merged auth
+      [],                                   // flags
     ]);
     const app = makeApp(db);
     const res = await app.fetch(
@@ -252,6 +256,35 @@ describe('GET /api/sdk/flags', () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
+  // ── In-process flag cache ───────────────────────────────────────────────────
+
+  it('serves flags from in-process cache on subsequent requests for the same environment', async () => {
+    const db = makeSdkQueueDb([
+      [authRow()],                               // request 1: merged auth
+      [{ key: 'feature-a', enabled: true }],    // request 1: flags DB hit (populates cache)
+      [authRow()],                               // request 2: merged auth
+      // no flags entry — if cache is bypassed, queue returns [] and assertion fails
+    ]);
+    const app = makeApp(db);
+
+    const makeReq = () =>
+      app.fetch(new Request('http://localhost/api/sdk/flags', {
+        headers: { Authorization: 'Bearer sdk-key' },
+      }));
+
+    const res1 = await makeReq();
+    expect(res1.status).toBe(200);
+    expect((await res1.json() as { flags: unknown[] }).flags).toEqual([
+      { key: 'feature-a', enabled: true },
+    ]);
+
+    const res2 = await makeReq();
+    expect(res2.status).toBe(200);
+    expect((await res2.json() as { flags: unknown[] }).flags).toEqual([
+      { key: 'feature-a', enabled: true },
+    ]);
   });
 });
 
