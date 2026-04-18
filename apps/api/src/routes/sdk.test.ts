@@ -268,6 +268,72 @@ describe('GET /api/sdk/flags', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
   });
 
+  // ── Country targeting (CloudFront-Viewer-Country header) ───────────────────
+
+  it('returns enabled: true for a country in allowedCountries', async () => {
+    const db = makeSdkQueueDb([
+      [authRow()],
+      [{ key: 'geo-flag', enabled: false, allowedCountries: ['US', 'CA'] }],
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: { Authorization: 'Bearer sdk-key', 'CloudFront-Viewer-Country': 'US' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as { flags: Array<{ key: string; enabled: boolean }> };
+    expect(body.flags).toEqual([{ key: 'geo-flag', enabled: true }]);
+  });
+
+  it('returns enabled: false for a country not in allowedCountries', async () => {
+    const db = makeSdkQueueDb([
+      [authRow()],
+      [{ key: 'geo-flag', enabled: true, allowedCountries: ['US'] }],
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: { Authorization: 'Bearer sdk-key', 'CloudFront-Viewer-Country': 'DE' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as { flags: Array<{ key: string; enabled: boolean }> };
+    expect(body.flags).toEqual([{ key: 'geo-flag', enabled: false }]);
+  });
+
+  it('falls back to envEnabled when CloudFront-Viewer-Country header is absent', async () => {
+    const db = makeSdkQueueDb([
+      [authRow()],
+      [{ key: 'geo-flag', enabled: true, allowedCountries: ['US'] }],
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: { Authorization: 'Bearer sdk-key' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as { flags: Array<{ key: string; enabled: boolean }> };
+    expect(body.flags).toEqual([{ key: 'geo-flag', enabled: true }]);
+  });
+
+  it('returns envEnabled when no country rules are configured (empty allowedCountries)', async () => {
+    const db = makeSdkQueueDb([
+      [authRow()],
+      [{ key: 'plain-flag', enabled: false, allowedCountries: [] }],
+    ]);
+    const app = makeApp(db);
+    const res = await app.fetch(
+      new Request('http://localhost/api/sdk/flags', {
+        headers: { Authorization: 'Bearer sdk-key', 'CloudFront-Viewer-Country': 'US' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as { flags: Array<{ key: string; enabled: boolean }> };
+    expect(body.flags).toEqual([{ key: 'plain-flag', enabled: false }]);
+  });
+
   // ── In-process flag cache ───────────────────────────────────────────────────
 
   it('serves flags from in-process cache on subsequent requests for the same environment', async () => {

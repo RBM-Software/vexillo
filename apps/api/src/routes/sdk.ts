@@ -7,6 +7,8 @@ import type { StreamRegistry } from '../lib/stream-registry';
 import type { AuthCache } from '../lib/auth-cache';
 import { createSnapshotCache } from '../lib/snapshot-cache';
 import type { SnapshotCache } from '../lib/snapshot-cache';
+import { createFlagCache } from '../lib/flag-cache';
+import { evaluateCountryRule } from '../lib/evaluate-country-rule';
 
 // CORS headers used on pre-env-lookup error responses (401, env-not-found 403).
 // We use * here because we don't yet know the environment's allowedOrigins, but
@@ -84,7 +86,10 @@ export function createSdkRouter(
   authCache?: AuthCache,
   snapshotCache?: SnapshotCache,
 ) {
+  // snapshotCache: serialized JSON strings for SSE streams (per environment)
   const cache = snapshotCache ?? createSnapshotCache();
+  // rawCache: raw flag rows for the REST /flags endpoint (geo-eval happens per-request)
+  const rawCache = createFlagCache();
 
   const sdk = new OpenAPIHono();
 
@@ -177,12 +182,23 @@ export function createSdkRouter(
       return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
     }
 
-    let cachedSnapshot = cache.get(auth.environmentId);
-    if (!cachedSnapshot) {
-      const flagRows = await queryEnvironmentFlagStates(db, auth.orgId, auth.environmentId);
-      cachedSnapshot = JSON.stringify({ flags: flagRows.map((r) => ({ key: r.key, enabled: r.enabled })) });
-      cache.set(auth.environmentId, cachedSnapshot);
+    // CloudFront injects this header; absent in local dev and CI → falls back to envEnabled.
+    const countryCode = c.req.header('cloudfront-viewer-country') ?? null;
+
+    let rawRows = rawCache.get(auth.environmentId);
+    if (!rawRows) {
+      rawRows = await queryEnvironmentFlagStates(db, auth.orgId, auth.environmentId);
+      rawCache.set(auth.environmentId, rawRows);
     }
+
+    const evaluatedFlags = rawRows.map((r) => ({
+      key: r.key,
+      enabled: evaluateCountryRule({
+        allowedCountries: r.allowedCountries ?? [],
+        countryCode,
+        envEnabled: r.enabled,
+      }),
+    }));
 
     const headers = {
       'Access-Control-Allow-Origin': allowedOrigin,
@@ -191,11 +207,7 @@ export function createSdkRouter(
       'Cache-Control': 's-maxage=30, stale-while-revalidate=60',
     };
 
-    return c.json(
-      JSON.parse(cachedSnapshot) as { flags: Array<{ key: string; enabled: boolean }> },
-      200,
-      headers,
-    );
+    return c.json({ flags: evaluatedFlags }, 200, headers);
   });
 
   sdk.get('/flags/stream', async (c) => {
