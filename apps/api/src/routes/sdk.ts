@@ -77,6 +77,7 @@ const getFlagsStreamRoute = createRoute({
   path: '/flags/stream',
   operationId: 'getFlagsStream',
   summary: 'Feature flag SSE stream (keepalive stub)',
+  security: [{ BearerAuth: [] }],
   description:
     'Server-sent events stream. Currently a stub that emits a keepalive comment ' +
     '(`: keepalive`) every 25 seconds to prevent CloudFront from closing the idle ' +

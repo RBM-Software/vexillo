@@ -376,6 +376,16 @@ describe('GET /openapi.json', () => {
     expect(security.some((s) => 'BearerAuth' in s)).toBe(true);
   });
 
+  it('/flags/stream GET operation requires BearerAuth security', async () => {
+    const app = makeDocsApp(makeMockDb());
+    const res = await app.fetch(new Request('http://localhost/openapi.json'));
+    const spec = await res.json() as Record<string, unknown>;
+    const paths = spec.paths as Record<string, unknown>;
+    const streamGet = (paths['/flags/stream'] as Record<string, unknown>).get as Record<string, unknown>;
+    const security = streamGet.security as Array<Record<string, unknown>>;
+    expect(security.some((s) => 'BearerAuth' in s)).toBe(true);
+  });
+
   it('/flags GET operation has 200, 401, and 403 response codes', async () => {
     const app = makeDocsApp(makeMockDb());
     const res = await app.fetch(new Request('http://localhost/openapi.json'));
