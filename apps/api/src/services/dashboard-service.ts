@@ -9,6 +9,7 @@ import {
   updateFlag,
   deleteFlag,
   toggleFlag,
+  queryEnvironmentFlagStates,
   queryOrgEnvironments,
   queryOrgEnvironmentIds,
   insertEnvironmentWithKey,
@@ -31,6 +32,13 @@ import {
   organizations,
 } from '@vexillo/db';
 import { generateApiKey, hashKey, maskKey } from '../lib/api-key';
+
+// ── Interfaces ────────────────────────────────────────────────────────────────
+
+// Narrow interface satisfied by Bun's RedisClient.publish() and test mocks.
+export interface RedisPublisher {
+  publish(channel: string, message: string): Promise<number> | void;
+}
 
 // ── Domain errors ──────────────────────────────────────────────────────────────
 
@@ -136,7 +144,7 @@ export interface DashboardService {
 
 // ── Implementation ─────────────────────────────────────────────────────────────
 
-export function createDashboardService(db: DbClient): DashboardService {
+export function createDashboardService(db: DbClient, redisPublisher?: RedisPublisher): DashboardService {
   return {
     async resolveOrgContext(slug, userId) {
       const org = await queryOrgBySlug(db, slug);
@@ -193,6 +201,13 @@ export function createDashboardService(db: DbClient): DashboardService {
       const result = await toggleFlag(db, orgId, key, environmentId);
       if (!result) throw new NotFoundError('Flag not found');
       await insertAuditLog(db, { orgId, actorId, action: 'flag.toggle', targetType: 'flag', targetId: key, metadata: { key, environmentId, enabled: result.enabled } });
+      if (redisPublisher) {
+        const flagStates = await queryEnvironmentFlagStates(db, environmentId);
+        await redisPublisher.publish(
+          `flags:env:${environmentId}`,
+          JSON.stringify({ flags: flagStates }),
+        );
+      }
       return result;
     },
 

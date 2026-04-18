@@ -18,14 +18,16 @@ if (!DATABASE_URL) {
 
 const db = createDbClient(DATABASE_URL, { max: 10 });
 const auth = createAuth(db);
-const dashboardService = createDashboardService(db);
 
 // Optional Redis: enables cross-container SSE fan-out. Omit REDIS_URL to run
 // single-container (stream still works; toggles reach only local connections).
 const REDIS_URL = process.env.REDIS_URL;
-const streamRegistry = REDIS_URL
-  ? createStreamRegistry(createRedisClients(REDIS_URL).subscriber)
+const redisClients = REDIS_URL ? createRedisClients(REDIS_URL) : undefined;
+const streamRegistry = redisClients
+  ? createStreamRegistry(redisClients.subscriber)
   : undefined;
+
+const dashboardService = createDashboardService(db, redisClients?.publisher);
 
 const app = new Hono();
 
