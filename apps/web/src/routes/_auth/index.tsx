@@ -1,6 +1,15 @@
 import { useState, useEffect, useMemo, type FormEvent } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Plus, Search, ChevronDown, MoreHorizontal, X, Globe } from 'lucide-react'
+import { Plus, Search, ChevronDown, MoreHorizontal, X, ChevronsUpDown } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -342,13 +351,17 @@ function CreateFlagDialog({
 
 // ── Country Rules Dialog ─────────────────────────────────────────────────────
 
-const regionNames = (() => {
-  try { return new Intl.DisplayNames(['en'], { type: 'region' }) } catch { return null }
+const COUNTRIES: { code: string; name: string }[] = (() => {
+  try {
+    const names = new Intl.DisplayNames(['en'], { type: 'region' })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const codes = (Intl as any).supportedValuesOf?.('region') as string[] | undefined
+    if (!codes) return []
+    return codes
+      .map((code: string) => ({ code, name: names.of(code) ?? code }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  } catch { return [] }
 })()
-
-function countryLabel(code: string) {
-  try { return regionNames?.of(code) ?? code } catch { return code }
-}
 
 function CountryRulesDialog({
   flag,
@@ -368,8 +381,8 @@ function CountryRulesDialog({
   onSaved: () => void
 }) {
   const [rules, setRules] = useState<Record<string, string[]>>({})
-  const [inputs, setInputs] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<string | null>(null)
+  const [openCombobox, setOpenCombobox] = useState<string | null>(null)
 
   useEffect(() => {
     if (!flag) return
@@ -378,16 +391,8 @@ function CountryRulesDialog({
       init[env.id] = flag.countryRules[env.slug] ?? []
     }
     setRules(init)
-    setInputs({})
+    setOpenCombobox(null)
   }, [flag, environments, open])
-
-  function addCountry(envId: string) {
-    const code = (inputs[envId] ?? '').toUpperCase().trim()
-    if (!code || !/^[A-Z]{2}$/.test(code)) return
-    if ((rules[envId] ?? []).includes(code)) return
-    setRules((prev) => ({ ...prev, [envId]: [...(prev[envId] ?? []), code] }))
-    setInputs((prev) => ({ ...prev, [envId]: '' }))
-  }
 
   function removeCountry(envId: string, code: string) {
     setRules((prev) => ({ ...prev, [envId]: (prev[envId] ?? []).filter((c) => c !== code) }))
@@ -444,7 +449,7 @@ function CountryRulesDialog({
                       {envRules.map((code) => (
                         <Badge key={code} variant="secondary" className="gap-1 font-mono text-[0.7rem]">
                           {code}
-                          <span className="font-sans opacity-60">{countryLabel(code)}</span>
+                          <span className="font-sans opacity-60">{COUNTRIES.find((c) => c.code === code)?.name ?? code}</span>
                           {isAdmin && (
                             <button
                               onClick={() => removeCountry(env.id, code)}
@@ -461,23 +466,41 @@ function CountryRulesDialog({
 
                   {isAdmin && (
                     <div className="flex items-center gap-2">
-                      <Input
-                        value={inputs[env.id] ?? ''}
-                        onChange={(e) => setInputs((prev) => ({ ...prev, [env.id]: e.target.value }))}
-                        placeholder="US"
-                        maxLength={2}
-                        className="h-7 w-16 text-xs font-mono uppercase"
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCountry(env.id) } }}
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => addCountry(env.id)}
-                        disabled={!(inputs[env.id] ?? '').trim()}
-                        className="h-7 px-2 text-xs shrink-0"
+                      <Popover
+                        open={openCombobox === env.id}
+                        onOpenChange={(open) => setOpenCombobox(open ? env.id : null)}
                       >
-                        Add
-                      </Button>
+                        <PopoverTrigger
+                          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-input bg-background px-2 text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          disabled={COUNTRIES.length === 0}
+                        >
+                          Add country
+                          <ChevronsUpDown className="h-3 w-3 opacity-50" />
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-0 z-[60]" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search countries…" />
+                            <CommandList>
+                              <CommandEmpty>No country found.</CommandEmpty>
+                              <CommandGroup>
+                                {COUNTRIES.filter((c) => !envRules.includes(c.code)).map((c) => (
+                                  <CommandItem
+                                    key={c.code}
+                                    value={`${c.code} ${c.name}`}
+                                    onSelect={() => {
+                                      setRules((prev) => ({ ...prev, [env.id]: [...(prev[env.id] ?? []), c.code] }))
+                                      setOpenCombobox(null)
+                                    }}
+                                  >
+                                    <span className="font-mono text-xs w-7 shrink-0">{c.code}</span>
+                                    <span>{c.name}</span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <div className="flex-1" />
                       {envRules.length > 0 && (
                         <Button
@@ -600,21 +623,10 @@ export function FlagsPage() {
         size: 100,
         cell: ({ row }) => {
           const isOn = selectedEnv ? !!row.original.states[selectedEnv.slug] : null
-          const geoCount = selectedEnv ? (row.original.countryRules?.[selectedEnv.slug] ?? []).length : 0
-          return (
-            <div className="flex items-center gap-1.5">
-              {isOn === null ? (
-                <span className="text-muted-foreground">—</span>
-              ) : (
-                <Badge variant={isOn ? 'success' : 'secondary'}>{isOn ? 'On' : 'Off'}</Badge>
-              )}
-              {geoCount > 0 && (
-                <Badge variant="outline" className="gap-0.5 text-[0.7rem] text-muted-foreground">
-                  <Globe className="h-2.5 w-2.5" />
-                  {geoCount}
-                </Badge>
-              )}
-            </div>
+          return isOn === null ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <Badge variant={isOn ? 'success' : 'secondary'}>{isOn ? 'On' : 'Off'}</Badge>
           )
         },
       },
