@@ -3,6 +3,7 @@ import { eq, and, asc, sql } from 'drizzle-orm';
 import { apiKeys, environments, organizations, flags, flagStates } from '@vexillo/db';
 import type { DbClient } from '@vexillo/db';
 import { hashKey } from '../lib/api-key';
+import { createFlagCache } from '../lib/flag-cache';
 
 // CORS headers used on pre-env-lookup error responses (401, env-not-found 403).
 // We use * here because we don't yet know the environment's allowedOrigins, but
@@ -100,6 +101,7 @@ const getFlagsStreamRoute = createRoute({
 
 export function createSdkRouter(db: DbClient) {
   const sdk = new OpenAPIHono();
+  const flagCache = createFlagCache();
 
   // Register Bearer auth security scheme so it appears in the generated spec.
   sdk.openAPIRegistry.registerComponent('securitySchemes', 'BearerAuth', {
@@ -124,58 +126,58 @@ export function createSdkRouter(db: DbClient) {
 
     const hash = await hashKey(token);
 
-    const [apiKey] = await db
-      .select({ environmentId: apiKeys.environmentId })
-      .from(apiKeys)
-      .where(eq(apiKeys.keyHash, hash))
-      .limit(1);
-
-    if (!apiKey) {
-      return c.json({ error: 'Unauthorized' }, 401, SDK_ERROR_CORS_HEADERS);
-    }
-
-    const [env] = await db
+    // Single query: resolve API key → environment → org in one round-trip.
+    const [auth] = await db
       .select({
-        id: environments.id,
+        environmentId: apiKeys.environmentId,
+        orgId: environments.orgId,
         allowedOrigins: environments.allowedOrigins,
         orgStatus: organizations.status,
       })
-      .from(environments)
+      .from(apiKeys)
+      .innerJoin(environments, eq(environments.id, apiKeys.environmentId))
       .innerJoin(organizations, eq(organizations.id, environments.orgId))
-      .where(eq(environments.id, apiKey.environmentId))
+      .where(eq(apiKeys.keyHash, hash))
       .limit(1);
 
-    if (!env) {
+    if (!auth) {
+      return c.json({ error: 'Unauthorized' }, 401, SDK_ERROR_CORS_HEADERS);
+    }
+
+    if (auth.orgStatus === 'suspended') {
       return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
     }
 
-    if (env.orgStatus === 'suspended') {
-      return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
-    }
-
-    // Enforce per-environment CORS allowlist.
     const requestOrigin = c.req.header('origin');
-    const allowedOrigin = resolveAllowedOrigin(requestOrigin, env.allowedOrigins);
+    const allowedOrigin = resolveAllowedOrigin(requestOrigin, auth.allowedOrigins);
 
     if (allowedOrigin === null) {
-      // Origin is present but not in the allowlist — block the request.
       return c.json({ error: 'Forbidden' }, 403, SDK_ERROR_CORS_HEADERS);
     }
 
-    const rows = await db
-      .select({
-        key: flags.key,
-        enabled: sql<boolean>`COALESCE(${flagStates.enabled}, false)`,
-      })
-      .from(flags)
-      .leftJoin(
-        flagStates,
-        and(
-          eq(flagStates.flagId, flags.id),
-          eq(flagStates.environmentId, apiKey.environmentId),
-        ),
-      )
-      .orderBy(asc(flags.key));
+    // Serve from in-process cache when available; flags change infrequently
+    // and s-maxage=30 on the response already tolerates short staleness.
+    let flagRows = flagCache.get(auth.environmentId);
+
+    if (!flagRows) {
+      flagRows = await db
+        .select({
+          key: flags.key,
+          enabled: sql<boolean>`COALESCE(${flagStates.enabled}, false)`,
+        })
+        .from(flags)
+        .leftJoin(
+          flagStates,
+          and(
+            eq(flagStates.flagId, flags.id),
+            eq(flagStates.environmentId, auth.environmentId),
+          ),
+        )
+        .where(eq(flags.orgId, auth.orgId))
+        .orderBy(asc(flags.key));
+
+      flagCache.set(auth.environmentId, flagRows);
+    }
 
     const headers = {
       'Access-Control-Allow-Origin': allowedOrigin,
@@ -185,7 +187,7 @@ export function createSdkRouter(db: DbClient) {
     };
 
     return c.json(
-      { flags: rows.map((r) => ({ key: r.key, enabled: r.enabled })) },
+      { flags: flagRows.map((r) => ({ key: r.key, enabled: r.enabled })) },
       200,
       headers,
     );
