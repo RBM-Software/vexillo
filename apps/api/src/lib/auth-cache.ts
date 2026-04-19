@@ -16,5 +16,10 @@ export function createAuthCache(ttlMs = 30_000, max = 1_000) {
     set: (key: string, entry: AuthEntry): void => { store.set(key, entry); },
     isStale: (key: string): boolean => store.has(key) && store.getRemainingTTL(key) === 0,
     clear: (): void => { store.clear(); },
+    deleteByEnvironmentId: (environmentId: string): void => {
+      const toDelete: string[] = [];
+      store.forEach((entry, key) => { if (entry.environmentId === environmentId) toDelete.push(key); });
+      for (const key of toDelete) store.delete(key);
+    },
   };
 }
