@@ -6,40 +6,50 @@
 
 ## TL;DR
 
-Use **REST** by default. Switch to **Streaming** only where flag latency is business-critical (checkout, flash sales, kill switches).
+**Use both.** REST by default for the majority of traffic; streaming opt-in for pages where flag latency is business-critical (checkout, flash sales, kill switches). The hybrid is cheaper than full streaming and more capable than pure REST.
 
-In a **multi-region** deployment, the calculus shifts: streaming eliminates the need for a secondary database, while REST does not. At two regions, streaming is cheaper overall.
+In a **multi-region** deployment, the calculus shifts further: streaming eliminates the need for a secondary database, while REST does not. At two regions, the hybrid is cheaper than pure REST once you factor in the secondary RDS.
+
+---
+
+## How streaming actually works
+
+Streaming mode (`<VexilloClientProvider streaming>`) is itself a hybrid under the hood:
+
+1. **REST prefetch first** — `connectStream()` fires `GET /api/sdk/flags` immediately. This hits the CloudFront cache and resolves in under 50 ms, so `isReady` is `true` and components render with real flag values before the SSE handshake completes.
+2. **SSE connection second** — once established, the server sends the full live snapshot (overwriting the cached REST value) and then pushes a new snapshot on every toggle.
+
+The REST prefetch is intentional, not a cost concern — it's CDN-cached and costs a fraction of a cent per connect. The SSE connection is what carries the real-time update cost.
 
 ---
 
 ## Comparison
 
-| | REST `GET /api/sdk/flags` | Streaming `GET /api/sdk/flags/stream` |
-|---|---|---|
-| Flag freshness (single-region) | Up to ~6 min (CDN + snapshot cache) | ~5–20 ms after toggle |
-| Flag freshness (multi-region) | Up to ~6 min (CloudFront TTL unaffected by fan-out) | <5 s (fan-out → pub/sub → SSE clients) |
-| CDN-cacheable | Yes — `s-maxage=300, swr=60` | No |
-| Server connections | Stateless | ~1,150 persistent at 1M visits/month peak |
-| Redis required | No | Yes (multi-instance deployments) |
-| Secondary DB required (multi-region) | Yes — REST cache misses hit RDS cross-region (~80–100 ms) | No — fan-out keeps snapshotCache warm; DB only on cold starts |
-| Est. AWS cost/month (single-region) | ~$12–25 | ~$47–95 |
-| Est. AWS cost/month (two regions) | ~$55–115 | ~$94–190 |
-| Use for | Catalog, PDPs, SSR, SEO | Checkout, flash sales, kill switches |
+| | Pure REST | Pure Streaming | Hybrid (recommended) |
+|---|---|---|---|
+| Flag freshness (single-region) | Up to ~6 min | ~5–20 ms after toggle | Up to ~6 min (REST pages) / ~5–20 ms (streaming pages) |
+| Flag freshness (multi-region) | Up to ~6 min (CloudFront TTL unaffected by fan-out) | <5 s | <5 s on streaming pages |
+| CDN-cacheable | Yes | No | Yes (REST prefetch + REST-only pages) |
+| Persistent connections | None | ~1,150 at peak | Only for streaming pages — a fraction of total traffic |
+| Redis required | No | Yes | Yes (but sized for streaming subset only) |
+| Secondary DB required (multi-region) | Yes | No | No — streaming pages keep snapshotCache warm via fan-out |
+| Est. AWS cost/month (single-region) | ~$12–25 | ~$47–95 | ~$25–55 |
+| Est. AWS cost/month (two regions) | ~$55–115 | ~$94–190 | ~$50–105 |
 
 ---
 
 ## Cost Breakdown
 
-### REST (~$12–25/month, single region)
+### Pure REST (~$12–25/month, single region)
 
-CloudFront caches responses per API key, not per user. At 1M visits/month, >95% of requests are served from edge cache — fewer than 1 req/s reaches your origin.
+CloudFront caches responses per API key. At 1M visits/month, >95% of requests are served from edge cache — fewer than 1 req/s reaches your origin.
 
 | | Est./month |
 |---|---|
 | CloudFront (1M requests + ~10 GB transfer) | $2–5 |
 | ECS (one small task covers origin load) | $10–20 |
 
-### Streaming (~$47–95/month, single region)
+### Pure Streaming (~$47–95/month, single region)
 
 Every tab holds an open connection to your origin — no CDN buffering. At 1M visits/month with ~5-min avg sessions, expect ~1,150 concurrent connections at peak.
 
@@ -49,26 +59,36 @@ Every tab holds an open connection to your origin — no CDN buffering. At 1M vi
 | ECS (more tasks for persistent connections) | $30–60 |
 | ElastiCache Redis (required for multi-instance) | $15–30 |
 
+### Hybrid (~$25–55/month, single region)
+
+REST handles the bulk of traffic cheaply through CloudFront. Streaming is only enabled on a small subset of pages (checkout, kill-switch-protected flows). Persistent connections and Redis are sized for that subset, not your full 1M visits/month.
+
+| | Est./month |
+|---|---|
+| CloudFront (REST majority) | $2–5 |
+| ECS (sized for mixed load) | $15–30 |
+| ElastiCache Redis (sized for streaming subset) | $8–20 |
+
 ---
 
 ## Multi-Region Cost
 
-### REST (two regions, ~$55–115/month)
+### Pure REST (two regions, ~$55–115/month)
 
-Fan-out propagates the snapshot to the secondary's in-memory cache, but CloudFront's edge cache is independent — REST clients in the secondary still see stale responses for up to 5 minutes after a toggle. To avoid cross-region DB latency on cache misses, a second database is needed.
+Fan-out propagates snapshots to the secondary's in-memory cache, but CloudFront's edge cache is independent — REST clients still see stale responses for up to 5 minutes. To avoid cross-region DB latency on cache misses, a second database is needed.
 
 | | Est./month |
 |---|---|
 | REST costs × 2 regions | $24–50 |
-| RDS in secondary region (cache misses hit DB) | $15–30 |
+| RDS in secondary region | $15–30 |
 | Cross-region data transfer | $5–10 |
-| Fan-out infra (SSM, minimal ECS overhead) | <$5 |
+| Fan-out infra | <$5 |
 
 > Without a secondary DB, REST cache misses in eu-west-1 fall through to RDS in us-east-1 (~80–100 ms). Acceptable for low-traffic paths; noticeable at scale.
 
-### Streaming (two regions, ~$94–190/month)
+### Pure Streaming (two regions, ~$94–190/month)
 
-The fan-out keeps each secondary's `snapshotCache` warm after every toggle. SSE clients in the secondary receive updates in under 5 seconds. No secondary database is needed — the DB is only touched on cold starts.
+Fan-out keeps each secondary's `snapshotCache` warm. SSE clients receive updates in under 5 seconds. No secondary database needed.
 
 | | Est./month |
 |---|---|
@@ -76,19 +96,28 @@ The fan-out keeps each secondary's `snapshotCache` warm after every toggle. SSE 
 | Secondary DB | $0 — not required |
 | Cross-region data transfer (fan-out payloads) | <$2 |
 
-**At two regions, streaming costs less than REST** once you account for the secondary database REST requires. The gap widens with each additional region.
+### Hybrid (two regions, ~$50–105/month)
+
+The streaming subset keeps `snapshotCache` warm in the secondary via fan-out, eliminating the secondary DB requirement. REST pages in the secondary still serve from CloudFront (up to 6 min lag), but the critical paths (checkout, kill switches) get <5 s propagation via streaming.
+
+| | Est./month |
+|---|---|
+| Hybrid costs × 2 regions | $50–110 |
+| Secondary DB | $0 — streaming keeps cache warm |
+| Cross-region data transfer | <$5 |
+
+**The hybrid at two regions costs less than pure REST** once you account for the secondary database, and significantly less than pure streaming — while giving you real-time updates where they matter.
 
 ---
 
-## When to Use Each
+## When to Use Each Mode
 
 **REST** — anything where a 5-minute flag lag is acceptable:
 - Product catalog, PDPs, homepage
 - SSR pages (`fetchFlags()` at request time, pass as `initialFlags`)
 - Gradual rollouts, UI experiments
-- Single-region deployments
 
-**Streaming** — when the lag is not acceptable, or you're running multi-region:
+**Streaming** — when the lag is not acceptable:
 - Flash sales toggled at an exact time
 - Kill switches on a broken payment flow
 - Checkout funnel A/B tests that must apply mid-session
@@ -99,12 +128,12 @@ The fan-out keeps each secondary's `snapshotCache` warm after every toggle. SSE 
 ## Usage
 
 ```tsx
-// REST (default)
+// REST (default) — catalog, PDPs, homepage
 <VexilloClientProvider client={client}>
   <CatalogPage />
 </VexilloClientProvider>
 
-// Streaming
+// Streaming — checkout, kill switches, flash sales
 <VexilloClientProvider client={client} streaming>
   <CheckoutFlow />
 </VexilloClientProvider>
@@ -123,6 +152,6 @@ const client = createVexilloClient({ apiKey, baseUrl, initialFlags })
 
 **REST:** CDN serves stale on origin failure up to the `stale-while-revalidate` window. After that, SDK falls back to defaults (`false` for all flags).
 
-**Streaming:** SDK auto-reconnects with exponential backoff (1 s → 30 s max). On connect, it races a REST request in parallel — flags are never blank even if the SSE handshake is slow.
+**Streaming:** SDK auto-reconnects with exponential backoff (1 s → 30 s max). On connect, it races a REST prefetch in parallel — flags are never blank even if the SSE handshake is slow.
 
 **Multi-region fan-out:** Fire-and-forget — if the primary cannot reach a secondary at toggle time, the event is lost. The secondary falls back to serving its cached snapshot until the 30 s TTL expires and it refetches from the primary's RDS. No retry queue; missed events are bounded by cache TTL, not indefinite.
