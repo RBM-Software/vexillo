@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-**Use both.** REST by default for the majority of traffic; streaming opt-in for pages where flag latency is business-critical (checkout, flash sales, kill switches). The hybrid is cheaper than full streaming and more capable than pure REST.
+**Use both.** REST by default for the majority of traffic; streaming opt-in for pages where flag latency is business-critical (checkout, flash sales, kill switches). The hybrid is more capable than pure REST and significantly cheaper than running streaming everywhere.
 
 In a **multi-region** deployment, the calculus shifts further: streaming eliminates the need for a secondary database, while REST does not. At two regions, the hybrid is cheaper than pure REST once you factor in the secondary RDS.
 
@@ -25,16 +25,16 @@ The REST prefetch is intentional, not a cost concern — it's CDN-cached and cos
 
 ## Comparison
 
-| | Pure REST | Pure Streaming | Hybrid (recommended) |
-|---|---|---|---|
-| Flag freshness (single-region) | Up to ~6 min | ~5–20 ms after toggle | Up to ~6 min (REST pages) / ~5–20 ms (streaming pages) |
-| Flag freshness (multi-region) | Up to ~6 min (CloudFront TTL unaffected by fan-out) | <5 s | <5 s on streaming pages |
-| CDN-cacheable | Yes | No | Yes (REST prefetch + REST-only pages) |
-| Persistent connections | None | ~1,150 at peak | Only for streaming pages — a fraction of total traffic |
-| Redis required | No | Yes | Yes (but sized for streaming subset only) |
-| Secondary DB required (multi-region) | Yes | No | No — streaming pages keep snapshotCache warm via fan-out |
-| Est. AWS cost/month (single-region) | ~$12–25 | ~$47–95 | ~$25–55 |
-| Est. AWS cost/month (two regions) | ~$55–115 | ~$94–190 | ~$50–105 |
+| | REST | Hybrid (recommended) |
+|---|---|---|
+| Flag freshness (single-region) | Up to ~6 min | Up to ~6 min (REST pages) / ~5–20 ms (streaming pages) |
+| Flag freshness (multi-region) | Up to ~6 min (CloudFront TTL unaffected by fan-out) | <5 s on streaming pages |
+| CDN-cacheable | Yes | Yes (REST prefetch + REST-only pages) |
+| Persistent connections | None | Only for streaming pages — a fraction of total traffic |
+| Redis required | No | Yes (but sized for streaming subset only) |
+| Secondary DB required (multi-region) | Yes | No — streaming pages keep snapshotCache warm via fan-out |
+| Est. AWS cost/month (single-region) | ~$12–25 | ~$25–55 |
+| Est. AWS cost/month (two regions) | ~$55–115 | ~$50–105 |
 
 ---
 
@@ -48,16 +48,7 @@ CloudFront caches responses per API key. At 1M visits/month, >95% of requests ar
 |---|---|
 | CloudFront (1M requests + ~10 GB transfer) | $2–5 |
 | ECS (one small task covers origin load) | $10–20 |
-
-### Pure Streaming (~$47–95/month, single region)
-
-Every tab holds an open connection to your origin — no CDN buffering. At 1M visits/month with ~5-min avg sessions, expect ~1,150 concurrent connections at peak.
-
-| | Est./month |
-|---|---|
-| CloudFront | $2–5 |
-| ECS (more tasks for persistent connections) | $30–60 |
-| ElastiCache Redis (required for multi-instance) | $15–30 |
+| **Total** | **~$12–25** |
 
 ### Hybrid (~$25–55/month, single region)
 
@@ -68,6 +59,7 @@ REST handles the bulk of traffic cheaply through CloudFront. Streaming is only e
 | CloudFront (REST majority) | $2–5 |
 | ECS (sized for mixed load) | $15–30 |
 | ElastiCache Redis (sized for streaming subset) | $8–20 |
+| **Total** | **~$25–55** |
 
 ---
 
@@ -83,18 +75,9 @@ Fan-out propagates snapshots to the secondary's in-memory cache, but CloudFront'
 | RDS in secondary region | $15–30 |
 | Cross-region data transfer | $5–10 |
 | Fan-out infra | <$5 |
+| **Total** | **~$55–115** |
 
 > Without a secondary DB, REST cache misses in eu-west-1 fall through to RDS in us-east-1 (~80–100 ms). Acceptable for low-traffic paths; noticeable at scale.
-
-### Pure Streaming (two regions, ~$94–190/month)
-
-Fan-out keeps each secondary's `snapshotCache` warm. SSE clients receive updates in under 5 seconds. No secondary database needed.
-
-| | Est./month |
-|---|---|
-| Streaming costs × 2 regions | $94–190 |
-| Secondary DB | $0 — not required |
-| Cross-region data transfer (fan-out payloads) | <$2 |
 
 ### Hybrid (two regions, ~$50–105/month)
 
@@ -105,8 +88,9 @@ The streaming subset keeps `snapshotCache` warm in the secondary via fan-out, el
 | Hybrid costs × 2 regions | $50–110 |
 | Secondary DB | $0 — streaming keeps cache warm |
 | Cross-region data transfer | <$5 |
+| **Total** | **~$50–105** |
 
-**The hybrid at two regions costs less than pure REST** once you account for the secondary database, and significantly less than pure streaming — while giving you real-time updates where they matter.
+**The hybrid at two regions costs less than pure REST** once you account for the secondary database, while giving you real-time updates where they matter.
 
 ---
 
