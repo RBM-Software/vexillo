@@ -6,6 +6,7 @@ import React, {
   type ReactNode,
 } from "react";
 import { type VexilloClient } from "./client";
+import { useFocusRefetch } from "./use-focus-refetch";
 
 const VexilloClientContext = createContext<VexilloClient | null>(null);
 
@@ -16,6 +17,10 @@ export interface VexilloClientProviderProps {
    * When true, opens a persistent SSE stream via `client.connectStream()`
    * instead of calling `client.load()`. The stream reconnects automatically
    * with exponential backoff on disconnect.
+   *
+   * When false (the default), flags are fetched once on mount via `client.load()`
+   * and silently re-fetched whenever the browser window regains focus, so that
+   * users returning to the tab after navigating away always see fresh values.
    */
   streaming?: boolean;
 }
@@ -39,6 +44,8 @@ export function VexilloClientProvider({
   streaming = false,
 }: VexilloClientProviderProps): React.ReactElement {
   const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
+
+  useFocusRefetch(streaming ? () => {} : () => { void client.load(); });
 
   useEffect(() => {
     const unsub = client.subscribeAll(() => forceUpdate());
