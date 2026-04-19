@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from '@tanstack/react-router'
-import { Plus, Search, ChevronDown, MoreHorizontal, Check, X } from 'lucide-react'
+import { Plus, Search, ChevronDown, MoreHorizontal, Check, X, Minus } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -412,21 +412,103 @@ function CountryPicker({
   )
 }
 
-// ── Targeting Dialog ──────────────────────────────────────────────────────────
+// ── Rollout Dialog ────────────────────────────────────────────────────────────
 
-type EnvDraft = { countries: string[]; allCountries: boolean; enabled: boolean }
+function RolloutDialog({
+  flag,
+  orgSlug,
+  environments,
+  isAdmin,
+  open,
+  onOpenChange,
+  onChanged,
+}: {
+  flag: FlagRow | null
+  orgSlug: string
+  environments: Env[]
+  isAdmin: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onChanged: () => void
+}) {
+  const [toggling, setToggling] = useState<string | null>(null)
 
-function buildInitialDraft(flag: FlagRow | null, environments: Env[]): Record<string, EnvDraft> {
-  const draft: Record<string, EnvDraft> = {}
-  for (const env of environments) {
-    const codes = flag?.countryRules[env.slug] ?? []
-    draft[env.id] = {
-      countries: codes,
-      allCountries: codes.length === 0,
-      enabled: !!(flag?.states[env.slug]),
+  async function handleToggle(env: Env) {
+    if (!flag || toggling) return
+    setToggling(env.id)
+    try {
+      await api.flags.toggle(orgSlug, flag.key, env.id)
+      onChanged()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update rollout')
+    } finally {
+      setToggling(null)
     }
   }
-  return draft
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md p-0 gap-0">
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-border px-6 py-4 pr-14">
+          <div className="min-w-0">
+            <p className="text-[0.6875rem] font-medium uppercase tracking-widest text-muted-foreground">Rollout</p>
+            <DialogTitle className="truncate text-base font-semibold tracking-tight mt-0.5">
+              {flag?.name}
+            </DialogTitle>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="divide-y divide-border">
+          {environments.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">No environments configured yet.</p>
+          ) : (
+            environments.map((env) => {
+              const isOn = !!(flag?.states[env.slug])
+              const isLoading = toggling === env.id
+              return (
+                <div key={env.id} className="flex items-center justify-between gap-4 px-6 py-4">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium">{env.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isOn ? 'Enabled — flag evaluates to true' : 'Disabled — flag evaluates to false'}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={isOn}
+                    disabled={!isAdmin || !!toggling}
+                    aria-label={`Toggle ${flag?.name} in ${env.name}`}
+                    onCheckedChange={() => handleToggle(env)}
+                    data-loading={isLoading}
+                  />
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end rounded-b-xl border-t bg-muted/50 px-6 py-4">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Targeting Dialog ──────────────────────────────────────────────────────────
+
+function deriveRule(flag: FlagRow | null, envIds: Set<string>, environments: Env[]) {
+  const selected = environments.filter((e) => envIds.has(e.id))
+  if (selected.length === 0) return { countries: [] as string[], allCountries: true }
+  // If any selected env has no restriction, the union is "all countries"
+  const anyUnrestricted = selected.some((env) => (flag?.countryRules[env.slug] ?? []).length === 0)
+  if (anyUnrestricted) return { countries: [] as string[], allCountries: true }
+  const union = Array.from(new Set(selected.flatMap((env) => flag?.countryRules[env.slug] ?? []))).sort()
+  return { countries: union, allCountries: false }
 }
 
 function TargetingDialog({
@@ -446,16 +528,17 @@ function TargetingDialog({
   onOpenChange: (open: boolean) => void
   onChanged: () => void
 }) {
-  const [savedDraft, setSavedDraft] = useState<Record<string, EnvDraft>>({})
-  const [draft, setDraft] = useState<Record<string, EnvDraft>>({})
+  const [rule, setRule] = useState<{ countries: string[]; allCountries: boolean }>({ countries: [], allCountries: true })
+  const [ruleTouched, setRuleTouched] = useState(false)
+  const [selectedEnvIds, setSelectedEnvIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!open || !flag) return
-    const initial = buildInitialDraft(flag, environments)
-    setSavedDraft(initial)
-    setDraft(initial)
-  }, [flag, environments, open])
+    if (!open) return
+    setRule({ countries: [], allCountries: true })
+    setRuleTouched(false)
+    setSelectedEnvIds(new Set())
+  }, [flag, open])
 
   useEffect(() => {
     if (!open) return
@@ -468,58 +551,38 @@ function TargetingDialog({
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, draft])
+  }, [open, rule, selectedEnvIds])
 
-  const isDirtyGlobal = useMemo(() => {
-    return environments.some((env) => {
-      const d = draft[env.id]
-      const s = savedDraft[env.id]
-      if (!d || !s) return false
-      return (
-        d.allCountries !== s.allCountries ||
-        [...d.countries].sort().join(',') !== [...s.countries].sort().join(',') ||
-        d.enabled !== s.enabled
-      )
+  const allSelected = environments.length > 0 && selectedEnvIds.size === environments.length
+  const someSelected = selectedEnvIds.size > 0 && !allSelected
+
+  function toggleEnv(envId: string) {
+    setSelectedEnvIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(envId)) next.delete(envId)
+      else next.add(envId)
+      if (!ruleTouched) setRule(deriveRule(flag, next, environments))
+      return next
     })
-  }, [draft, savedDraft, environments])
-
-  function isEnvDirty(envId: string) {
-    const d = draft[envId]
-    const s = savedDraft[envId]
-    if (!d || !s) return false
-    return (
-      d.allCountries !== s.allCountries ||
-      [...d.countries].sort().join(',') !== [...s.countries].sort().join(',') ||
-      d.enabled !== s.enabled
-    )
   }
 
-  function patchDraft(envId: string, patch: Partial<EnvDraft>) {
-    setDraft((prev) => ({ ...prev, [envId]: { ...prev[envId], ...patch } }))
+  function toggleAll() {
+    const next = allSelected ? new Set<string>() : new Set(environments.map((e) => e.id))
+    setSelectedEnvIds(next)
+    if (!ruleTouched) setRule(deriveRule(flag, next, environments))
   }
 
   async function handleSave() {
-    if (!flag || saving || !isDirtyGlobal) return
+    if (!flag || saving || selectedEnvIds.size === 0) return
     setSaving(true)
     try {
       await Promise.all(
-        environments.map(async (env) => {
-          const d = draft[env.id]
-          const s = savedDraft[env.id]
-          if (!d || !s) return
-          const countriesDirty =
-            d.allCountries !== s.allCountries ||
-            [...d.countries].sort().join(',') !== [...s.countries].sort().join(',')
-          const enabledDirty = d.enabled !== s.enabled
-          if (countriesDirty) {
-            await api.flags.updateCountryRules(orgSlug, flag.key, env.id, d.allCountries ? [] : d.countries)
-          }
-          if (enabledDirty) {
-            await api.flags.toggle(orgSlug, flag.key, env.id)
-          }
-        })
+        environments
+          .filter((env) => selectedEnvIds.has(env.id))
+          .map((env) =>
+            api.flags.updateCountryRules(orgSlug, flag.key, env.id, rule.allCountries ? [] : rule.countries)
+          )
       )
-      setSavedDraft(draft)
       onChanged()
       onOpenChange(false)
     } catch (err) {
@@ -529,105 +592,106 @@ function TargetingDialog({
     }
   }
 
-  function handleCancel() {
-    setDraft(savedDraft)
-    onOpenChange(false)
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg p-0 gap-0">
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 pr-12">
+        <div className="flex items-center gap-3 border-b border-border px-6 py-4 pr-14">
           <div className="min-w-0">
-            <p className="text-[0.6875rem] font-medium uppercase tracking-widest text-muted-foreground">Configure</p>
-            <DialogTitle className="truncate text-sm font-semibold tracking-tight">
+            <p className="text-[0.6875rem] font-medium uppercase tracking-widest text-muted-foreground">Flag rules</p>
+            <DialogTitle className="truncate text-base font-semibold tracking-tight mt-0.5">
               {flag?.name}
             </DialogTitle>
           </div>
         </div>
 
-        {/* Body */}
-        <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
+        {/* Environment list */}
+        <div className="flex flex-col max-h-[45vh] overflow-y-auto">
           {environments.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No environments yet.</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">No environments configured yet.</p>
           ) : (
-            environments.map((env) => {
-              const d = draft[env.id] ?? { countries: [], allCountries: true, enabled: false }
-              const dirty = isEnvDirty(env.id)
+            <>
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="flex items-center gap-3 px-6 py-3 border-b border-border hover:bg-muted/40 text-left transition-colors sticky top-0 bg-background z-10"
+              >
+                <span className={cn(
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                  (allSelected || someSelected) ? 'bg-primary border-primary' : 'border-border'
+                )}>
+                  {allSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                  {someSelected && <Minus className="h-3 w-3 text-primary-foreground" />}
+                </span>
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                  {selectedEnvIds.size === 0
+                    ? 'Select environments to edit'
+                    : `${selectedEnvIds.size} of ${environments.length} selected`}
+                </span>
+              </button>
 
-              return (
-                <div
-                  key={env.id}
-                  className="px-4 py-4 space-y-3"
-                >
-                  <p className="text-[0.6875rem] font-semibold uppercase tracking-widest text-muted-foreground/70">
-                    {env.name}
-                  </p>
-
-                  {/* Rule 1 — Country targeting */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex shrink-0 flex-col items-center self-stretch">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-border text-[0.6rem] font-medium text-muted-foreground">
-                        1
-                      </span>
-                      <div className="w-px flex-1 bg-border/60 my-0.5" />
-                    </div>
-                    <div className="flex flex-1 items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm leading-tight">Country targeting</p>
-                        <p className="text-[0.7rem] text-muted-foreground mt-0.5">Allow traffic from specific countries</p>
-                      </div>
-                      {isAdmin ? (
-                        <CountryPicker
-                          selected={d.countries}
-                          allCountries={d.allCountries}
-                          onChange={(val) => patchDraft(env.id, val)}
-                          disabled={saving}
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          {d.allCountries ? 'All countries' : d.countries.length === 0 ? 'None' : d.countries.join(', ')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Rule 2 — Enable */}
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-[0.6rem] font-medium text-muted-foreground">
-                      2
+              {environments.map((env) => {
+                const codes = flag?.countryRules[env.slug] ?? []
+                const checked = selectedEnvIds.has(env.id)
+                return (
+                  <button
+                    key={env.id}
+                    type="button"
+                    onClick={() => toggleEnv(env.id)}
+                    className="flex items-center gap-3 px-6 py-3.5 border-b border-border hover:bg-muted/40 text-left transition-colors last:border-0"
+                  >
+                    <span className={cn(
+                      'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                      checked ? 'bg-primary border-primary' : 'border-border'
+                    )}>
+                      {checked && <Check className="h-3 w-3 text-primary-foreground" />}
                     </span>
-                    <div className="flex flex-1 items-center justify-between">
-                      <div>
-                        <p className="text-sm leading-tight">Enable</p>
-                        <p className="text-[0.7rem] text-muted-foreground mt-0.5">Roll out to matching users</p>
-                      </div>
-                      <Switch
-                        checked={d.enabled}
-                        onCheckedChange={(v) => isAdmin && patchDraft(env.id, { enabled: !!v })}
-                        disabled={!isAdmin || saving}
-                        aria-label={`Toggle ${flag?.name} in ${env.name}`}
-                      />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{env.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {codes.length === 0 ? 'All countries' : codes.join(', ')}
+                      </p>
                     </div>
-                  </div>
-                </div>
-              )
-            })
+                  </button>
+                )
+              })}
+            </>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="-mx-0 flex items-center justify-between gap-2 rounded-b-xl border-t bg-muted/50 px-4 py-3">
-          <span className="font-mono text-[0.6875rem] text-muted-foreground/60">{flag?.key}</span>
-          <div className="flex items-center gap-1.5">
-            <Button type="button" variant="outline" size="sm" onClick={handleCancel} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="button" size="sm" onClick={handleSave} disabled={saving || !isDirtyGlobal}>
-              {saving ? 'Saving…' : 'Save'}
-            </Button>
+        {/* Rule editor — only visible when environments are selected */}
+        {selectedEnvIds.size > 0 && (
+          <div className="border-t border-border px-6 py-4 space-y-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+              Geo-targeting
+            </p>
+            {isAdmin ? (
+              <CountryPicker
+                selected={rule.countries}
+                allCountries={rule.allCountries}
+                onChange={(val) => { setRuleTouched(true); setRule(val) }}
+                disabled={saving}
+              />
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                {rule.allCountries ? 'All countries' : rule.countries.length === 0 ? 'None' : rule.countries.join(', ')}
+              </span>
+            )}
           </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 rounded-b-xl border-t bg-muted/50 px-6 py-4">
+          <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="button" size="sm" onClick={handleSave} disabled={saving || selectedEnvIds.size === 0}>
+            {saving
+              ? 'Saving…'
+              : selectedEnvIds.size === 0
+                ? 'Select environments'
+                : `Apply to ${selectedEnvIds.size} environment${selectedEnvIds.size !== 1 ? 's' : ''}`}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -775,6 +839,7 @@ export function FlagsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [flagToDelete, setFlagToDelete] = useState<FlagRow | null>(null)
   const [flagToEdit, setFlagToEdit] = useState<FlagRow | null>(null)
+  const [flagToRollout, setFlagToRollout] = useState<FlagRow | null>(null)
   const [flagToTarget, setFlagToTarget] = useState<FlagRow | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [envFilter, setEnvFilter] = useState('')
@@ -880,8 +945,11 @@ export function FlagsPage() {
                   <DropdownMenuItem onClick={() => setFlagToEdit(flag)}>
                     Edit
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFlagToRollout(flag)}>
+                    Manage rollout
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setFlagToTarget(flag)}>
-                    Configure
+                    Flag rules
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -1107,6 +1175,16 @@ export function FlagsPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ['flags', org.slug] })}
+      />
+
+      <RolloutDialog
+        flag={flagToRollout ? (flagsList.find(f => f.id === flagToRollout.id) ?? flagToRollout) : null}
+        orgSlug={org.slug}
+        environments={environments}
+        isAdmin={isAdmin}
+        open={!!flagToRollout}
+        onOpenChange={(v) => { if (!v) setFlagToRollout(null) }}
+        onChanged={() => queryClient.invalidateQueries({ queryKey: ['flags', org.slug] })}
       />
 
       <TargetingDialog

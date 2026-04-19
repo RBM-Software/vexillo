@@ -154,23 +154,24 @@ export function createVexilloClient(config: VexilloClientConfig): VexilloClient 
     let lastEventId: string | null = null;
     let retryMs = 1000;
     let backoffMs = retryMs;
-    let firstAttempt = true;
+    let bootstrapped = false;
+
+    async function fetchRest(): Promise<void> {
+      try {
+        const flags = await fetchFlags(baseUrl, apiKey);
+        if (!active || bootstrapped) return;
+        remoteFlags = flags;
+        error = null;
+        ready = true;
+        bootstrapped = true;
+        notifyAll();
+      } catch {
+        // non-fatal: stream will deliver the initial snapshot shortly
+      }
+    }
 
     async function attempt(): Promise<void> {
       if (!active) return;
-
-      if (firstAttempt) {
-        firstAttempt = false;
-        try {
-          remoteFlags = await fetchFlags(baseUrl, apiKey);
-          error = null;
-          ready = true;
-          notifyAll();
-        } catch {
-          // non-fatal: stream will deliver the initial snapshot shortly
-        }
-        if (!active) return;
-      }
 
       abortController = new AbortController();
       try {
@@ -217,6 +218,7 @@ export function createVexilloClient(config: VexilloClientConfig): VexilloClient 
                 remoteFlags = next;
                 error = null;
                 ready = true;
+                bootstrapped = true;
                 backoffMs = retryMs;
                 notifyAll();
               } catch {
@@ -240,6 +242,9 @@ export function createVexilloClient(config: VexilloClientConfig): VexilloClient 
       }, backoffMs);
     }
 
+    // Race REST and SSE — whichever delivers first sets isReady.
+    // SSE stays open and remains authoritative for all subsequent updates.
+    void fetchRest();
     void attempt();
 
     return () => {
