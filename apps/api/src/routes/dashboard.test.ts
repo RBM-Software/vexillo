@@ -933,3 +933,33 @@ describe('createDashboardService — updateCountryRules', () => {
     await expect(service.updateCountryRules('org-1', 'actor-1', 'missing', 'env-1', ['US'])).rejects.toThrow('Flag not found');
   });
 });
+
+describe('createDashboardService — updateEnvironmentOrigins scoped cache invalidation', () => {
+  it('calls clearAuthCache with the environment id, not a full flush', async () => {
+    const db = makeServiceDb([
+      [{ id: 'env-1', orgId: 'org-1', allowedOrigins: ['https://example.com'] }], // updateEnvironmentOrigins (thenable)
+      [], // audit log (returning)
+    ]);
+
+    const clearMock = mock((_envId: string) => {});
+    const service = createDashboardService(db, undefined, clearMock);
+    await service.updateEnvironmentOrigins('org-1', 'actor-1', 'env-1', ['https://example.com']);
+
+    expect(clearMock).toHaveBeenCalledTimes(1);
+    const [envId] = clearMock.mock.calls[0] as unknown as [string];
+    expect(envId).toBe('env-1');
+  });
+
+  it('throws NotFoundError and does not call clearAuthCache when environment is not found', async () => {
+    const db = makeServiceDb([
+      [], // updateEnvironmentOrigins returns nothing — not found
+    ]);
+
+    const clearMock = mock((_envId: string) => {});
+    const service = createDashboardService(db, undefined, clearMock);
+    await expect(
+      service.updateEnvironmentOrigins('org-1', 'actor-1', 'env-missing', ['https://example.com']),
+    ).rejects.toThrow('Environment not found');
+    expect(clearMock).not.toHaveBeenCalled();
+  });
+});

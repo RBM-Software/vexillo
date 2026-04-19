@@ -212,17 +212,57 @@ describe('CloudFront', () => {
 });
 
 describe('SSM Parameters', () => {
-  const requiredParams = [
-    '/vexillo/DATABASE_URL',
-    '/vexillo/BETTER_AUTH_SECRET',
+  it.each([
     '/vexillo/BETTER_AUTH_URL',
     '/vexillo/BETTER_AUTH_TRUSTED_ORIGINS',
     '/vexillo/SUPER_ADMIN_EMAILS',
-  ];
-
-  it.each(requiredParams)('creates SSM parameter %s', (name) => {
+  ])('creates String SSM parameter %s', (name) => {
     template.hasResourceProperties('AWS::SSM::Parameter', {
       Name: name,
+    });
+  });
+
+  it('DATABASE_URL and BETTER_AUTH_SECRET are not plain String parameters', () => {
+    const params = template.findResources('AWS::SSM::Parameter');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const names = Object.values(params).map((r: any) => r.Properties.Name as string);
+    expect(names).not.toContain('/vexillo/DATABASE_URL');
+    expect(names).not.toContain('/vexillo/BETTER_AUTH_SECRET');
+  });
+
+  it('task definition references DATABASE_URL and BETTER_AUTH_SECRET as secrets', () => {
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Secrets: Match.arrayWith([
+            Match.objectLike({ Name: 'DATABASE_URL' }),
+            Match.objectLike({ Name: 'BETTER_AUTH_SECRET' }),
+          ]),
+        }),
+      ]),
+    });
+  });
+});
+
+describe('ECS Auto Scaling', () => {
+  it('creates a scalable target for the ECS service with minCapacity 2', () => {
+    template.hasResourceProperties('AWS::ApplicationAutoScaling::ScalableTarget', {
+      MinCapacity: 2,
+      MaxCapacity: 4,
+      ScalableDimension: 'ecs:service:DesiredCount',
+      ServiceNamespace: 'ecs',
+    });
+  });
+
+  it('applies a CPU utilization target-tracking scaling policy', () => {
+    template.hasResourceProperties('AWS::ApplicationAutoScaling::ScalingPolicy', {
+      PolicyType: 'TargetTrackingScaling',
+      TargetTrackingScalingPolicyConfiguration: Match.objectLike({
+        PredefinedMetricSpecification: {
+          PredefinedMetricType: 'ECSServiceAverageCPUUtilization',
+        },
+        TargetValue: 65,
+      }),
     });
   });
 });

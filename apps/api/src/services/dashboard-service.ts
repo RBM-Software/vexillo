@@ -38,7 +38,7 @@ import { generateApiKey, hashKey, maskKey } from '../lib/api-key';
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 export type NotifyFlagChange = (environmentId: string, payload: string) => void | Promise<void>;
-export type ClearAuthCache = () => void;
+export type ClearAuthCache = (environmentId: string) => void;
 
 // ── Domain errors ──────────────────────────────────────────────────────────────
 
@@ -277,7 +277,7 @@ export function createDashboardService(db: DbClient, notifyFlagChange?: NotifyFl
       if (!result) throw new NotFoundError('Environment not found');
       await insertAuditLog(db, { orgId, actorId, action: 'environment.update_origins', targetType: 'environment', targetId: id, metadata: { allowedOrigins } });
       envsCache.delete(orgId);
-      clearAuthCache?.();
+      clearAuthCache?.(id);
       return result;
     },
 

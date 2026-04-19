@@ -46,7 +46,7 @@ const notifyFlagChange = redisClients
       return streamRegistry.broadcast(envId, payload);
     };
 
-const dashboardService = createDashboardService(db, notifyFlagChange, () => authCache.clear());
+const dashboardService = createDashboardService(db, notifyFlagChange, (environmentId) => authCache.deleteByEnvironmentId(environmentId));
 
 const app = new Hono();
 

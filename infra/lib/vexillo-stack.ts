@@ -36,8 +36,6 @@ export class VexilloStack extends cdk.Stack {
     // that './setup.sh' has set.
     const ssmParams: Record<string, ssm.StringParameter> = {};
     for (const name of [
-      '/vexillo/DATABASE_URL',
-      '/vexillo/BETTER_AUTH_SECRET',
       '/vexillo/BETTER_AUTH_URL',
       '/vexillo/BETTER_AUTH_TRUSTED_ORIGINS',
       '/vexillo/SUPER_ADMIN_EMAILS',
@@ -49,8 +47,15 @@ export class VexilloStack extends cdk.Stack {
       });
     }
 
-    // OKTA_SECRET_KEY must be SecureString — CDK cannot create SecureString parameters.
-    // setup.sh creates the placeholder automatically before running 'cdk deploy'.
+    // DATABASE_URL, BETTER_AUTH_SECRET, and OKTA_SECRET_KEY must be SecureString —
+    // CDK cannot create SecureString parameters. setup.sh creates placeholders
+    // automatically before running 'cdk deploy'.
+    const databaseUrlParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+      this, 'ParamvexilloDATABASEURL', { parameterName: '/vexillo/DATABASE_URL' },
+    );
+    const betterAuthSecretParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+      this, 'ParamvexilloBETTERAUTHSECRET', { parameterName: '/vexillo/BETTER_AUTH_SECRET' },
+    );
     const oktaSecretKeyParam = ssm.StringParameter.fromSecureStringParameterAttributes(
       this, 'ParamvexilloOKTASECRETKEY', { parameterName: '/vexillo/OKTA_SECRET_KEY' },
     );
@@ -123,6 +128,8 @@ export class VexilloStack extends cdk.Stack {
     for (const param of Object.values(ssmParams)) {
       param.grantRead(executionRole);
     }
+    databaseUrlParam.grantRead(executionRole);
+    betterAuthSecretParam.grantRead(executionRole);
     oktaSecretKeyParam.grantRead(executionRole);
 
     // ── Task role (runtime: Secrets Manager for RDS credentials) ─────────────
@@ -151,7 +158,7 @@ export class VexilloStack extends cdk.Stack {
       serviceName: 'vexillo-api',
       cpu: 256,
       memoryLimitMiB: 512,
-      desiredCount: 1,
+      desiredCount: 2,
       securityGroups: [apiSg],
       taskSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       publicLoadBalancer: true,
@@ -167,8 +174,8 @@ export class VexilloStack extends cdk.Stack {
         environment: { PORT: '8080', NODE_ENV: 'production', APP_URL: cdk.Lazy.string({ produce: (): string => `https://${distribution.domainName}` }) },
         // ECS reads these from SSM and injects as env vars before the container starts.
         secrets: {
-          DATABASE_URL:                ecs.Secret.fromSsmParameter(ssmParams['/vexillo/DATABASE_URL']),
-          BETTER_AUTH_SECRET:          ecs.Secret.fromSsmParameter(ssmParams['/vexillo/BETTER_AUTH_SECRET']),
+          DATABASE_URL:                ecs.Secret.fromSsmParameter(databaseUrlParam),
+          BETTER_AUTH_SECRET:          ecs.Secret.fromSsmParameter(betterAuthSecretParam),
           BETTER_AUTH_URL:             ecs.Secret.fromSsmParameter(ssmParams['/vexillo/BETTER_AUTH_URL']),
           BETTER_AUTH_TRUSTED_ORIGINS: ecs.Secret.fromSsmParameter(ssmParams['/vexillo/BETTER_AUTH_TRUSTED_ORIGINS']),
           SUPER_ADMIN_EMAILS:          ecs.Secret.fromSsmParameter(ssmParams['/vexillo/SUPER_ADMIN_EMAILS']),
@@ -185,6 +192,14 @@ export class VexilloStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(5),
       healthyThresholdCount: 2,
       unhealthyThresholdCount: 3,
+    });
+
+    // ECS Service Auto Scaling — min 2 tasks for HA; scale out at 65% CPU
+    const scaling = apiService.service.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 4 });
+    scaling.scaleOnCpuUtilization('CpuScaling', {
+      targetUtilizationPercent: 65,
+      scaleInCooldown: cdk.Duration.seconds(300),
+      scaleOutCooldown: cdk.Duration.seconds(60),
     });
 
     // Allow ALB to reach ECS tasks on port 8080

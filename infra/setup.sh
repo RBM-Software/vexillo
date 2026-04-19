@@ -54,17 +54,19 @@ echo ""
 echo "Starting deployment..."
 echo ""
 
-# ── OKTA_SECRET_KEY placeholder ───────────────────────────────────────────────
+# ── SecureString SSM placeholders ────────────────────────────────────────────
 # CDK cannot create SecureString SSM parameters, but the ECS task definition
-# references this param at deploy time. Create a placeholder first; the real
-# value is written further below after cdk deploy succeeds.
-echo "Creating OKTA_SECRET_KEY placeholder..."
-aws ssm put-parameter \
-  --name /vexillo/OKTA_SECRET_KEY \
-  --value "placeholder" \
-  --type SecureString \
-  --overwrite > /dev/null
-echo "  ✓ /vexillo/OKTA_SECRET_KEY"
+# references these params at deploy time. Create placeholders first; the real
+# values are written further below after cdk deploy succeeds.
+echo "Creating SecureString SSM placeholders..."
+for param in /vexillo/DATABASE_URL /vexillo/BETTER_AUTH_SECRET /vexillo/OKTA_SECRET_KEY; do
+  aws ssm put-parameter \
+    --name "$param" \
+    --value "placeholder" \
+    --type SecureString \
+    --overwrite > /dev/null
+  echo "  ✓ $param"
+done
 echo ""
 
 # ── CDK bootstrap + deploy ────────────────────────────────────────────────────
@@ -126,8 +128,8 @@ put() {
   aws ssm put-parameter --name "$1" --value "$2" --type "$type" --overwrite > /dev/null
   echo "  ✓ $1"
 }
-put /vexillo/DATABASE_URL                "$DATABASE_URL"
-put /vexillo/BETTER_AUTH_SECRET          "$BETTER_AUTH_SECRET"
+put /vexillo/DATABASE_URL                "$DATABASE_URL"       SecureString
+put /vexillo/BETTER_AUTH_SECRET          "$BETTER_AUTH_SECRET" SecureString
 put /vexillo/BETTER_AUTH_URL             "$CLOUDFRONT_URL"
 put /vexillo/BETTER_AUTH_TRUSTED_ORIGINS "$CLOUDFRONT_URL"
 put /vexillo/OKTA_SECRET_KEY             "$OKTA_SECRET_KEY" SecureString
